@@ -1,5 +1,6 @@
 
 import './Resizer';
+import './Viewport';
 
 export class AppShell extends HTMLElement {
   constructor() {
@@ -26,7 +27,7 @@ export class AppShell extends HTMLElement {
         <gc-resizer type="vertical" target-var="--left-width" side="left" min="150" max="500"></gc-resizer>
 
         <main class="viewport">
-          <div class="viewport-label">VIEWPORT (3D)</div>
+          <gc-viewport id="main-viewport"></gc-viewport>
         </main>
 
         <gc-resizer type="vertical" target-var="--right-width" side="right" min="150" max="500"></gc-resizer>
