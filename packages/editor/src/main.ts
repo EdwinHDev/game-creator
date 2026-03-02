@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, vec3, EventBus } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UMeshComponent, vec3, EventBus } from '@game-creator/engine';
 import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
@@ -23,6 +23,13 @@ async function initEngine() {
     const camera = cameraActor.addComponent(UCameraComponent);
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 0, 5); // Pull back to see the center
+
+    // --- Phase 12: Editor Grid ---
+    const gridActor = world.spawnActor(AActor, 'EditorGrid');
+    const gridMesh = gridActor.addComponent(UMeshComponent);
+    gridActor.rootComponent = gridMesh;
+    gridMesh.createGrid(engine.getRenderer().getDevice()!, 100, 100);
+    // -----------------------------
 
     // --- Phase 10: Editor Camera Controller ---
     new EditorCameraController(canvas, cameraActor);

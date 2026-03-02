@@ -11,7 +11,9 @@ export class Renderer {
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
-  private pipeline: GPURenderPipeline | null = null;
+
+  private trianglePipeline: GPURenderPipeline | null = null;
+  private linePipeline: GPURenderPipeline | null = null;
 
   // Cache for uniform buffers to avoid re-allocation every frame
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -81,42 +83,60 @@ export class Renderer {
 
     const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
-    // Create Pipeline
-    this.pipeline = this.device.createRenderPipeline({
+    // Shared pipeline settings
+    const vertexBuffers: GPUVertexBufferLayout[] = [
+      {
+        arrayStride: 24, // 3 floats pos + 3 floats color
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x3' },
+          { shaderLocation: 1, offset: 12, format: 'float32x3' },
+        ],
+      },
+    ];
+
+    const fragmentState: GPUFragmentState = {
+      module: shaderModule,
+      entryPoint: 'fs_main',
+      targets: [{ format: this.format }],
+    };
+
+    // 1. Create Triangle Pipeline
+    this.trianglePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
         module: shaderModule,
         entryPoint: 'vs_main',
-        buffers: [
-          {
-            arrayStride: 24, // 3 floats pos + 3 floats color
-            attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x3' },
-              { shaderLocation: 1, offset: 12, format: 'float32x3' },
-            ],
-          },
-        ],
+        buffers: vertexBuffers,
       },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format }],
-      },
+      fragment: fragmentState,
       primitive: {
         topology: 'triangle-list',
         cullMode: 'back',
       },
-      // Note: We are missing a depth buffer here, but for a single cube it's fine.
     });
 
-    Logger.info("WebGPU Renderer initialized successfully with MVP pipeline");
+    // 2. Create Line Pipeline
+    this.linePipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers,
+      },
+      fragment: fragmentState,
+      primitive: {
+        topology: 'line-list',
+      },
+    });
+
+    Logger.info("WebGPU Renderer initialized with Triangle and Line pipelines.");
   }
 
   /**
    * Performs the main render pass.
    */
   public render(world: World): void {
-    if (!this.device || !this.context || !this.pipeline) return;
+    if (!this.device || !this.context) return;
 
     // 1. Find the first active camera
     let mainCamera: UCameraComponent | null = null;
@@ -153,7 +173,6 @@ export class Renderer {
     };
 
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-    passEncoder.setPipeline(this.pipeline);
 
     // 4. Iterate over meshes
     for (const actor of world.actors) {
@@ -169,7 +188,13 @@ export class Renderer {
   }
 
   private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, vpMatrix: mat4): void {
-    if (!this.device || !this.pipeline) return;
+    if (!this.device) return;
+
+    // Select the correct pipeline for this mesh
+    const pipeline = mesh.topology === 'line-list' ? this.linePipeline : this.trianglePipeline;
+    if (!pipeline) return;
+
+    passEncoder.setPipeline(pipeline);
 
     // Calculate Model matrix
     const modelMatrix = mat4.create();
@@ -184,11 +209,11 @@ export class Renderer {
     const mvpMatrix = mat4.create();
     mat4.multiply(mvpMatrix, vpMatrix, modelMatrix);
 
-    // Update or Create Uniform Buffer for this mesh
+    // Update or Create Uniform Buffer
     let uniformBuffer = this.uniformBuffers.get(mesh.id);
     if (!uniformBuffer) {
       uniformBuffer = this.device.createBuffer({
-        size: 64, // 4x4 matrix
+        size: 64,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.uniformBuffers.set(mesh.id, uniformBuffer);
@@ -200,7 +225,7 @@ export class Renderer {
     let bindGroup = this.bindGroups.get(mesh.id);
     if (!bindGroup) {
       bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
+        layout: pipeline.getBindGroupLayout(0),
         entries: [
           {
             binding: 0,
@@ -216,7 +241,12 @@ export class Renderer {
     // Set buffers and draw
     passEncoder.setBindGroup(0, bindGroup);
     passEncoder.setVertexBuffer(0, mesh.vertexBuffer);
-    passEncoder.setIndexBuffer(mesh.indexBuffer!, 'uint16');
-    passEncoder.drawIndexed(mesh.indexCount);
+
+    if (mesh.indexBuffer) {
+      passEncoder.setIndexBuffer(mesh.indexBuffer, 'uint16');
+      passEncoder.drawIndexed(mesh.indexCount);
+    } else {
+      passEncoder.draw(mesh.vertexCount);
+    }
   }
 }
