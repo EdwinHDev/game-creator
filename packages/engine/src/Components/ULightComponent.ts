@@ -15,6 +15,11 @@ export class ULightComponent extends USceneComponent {
    */
   public intensity: number = 1.0;
 
+  /**
+   * Whether this light should cast shadows.
+   */
+  public castShadows: boolean = true;
+
   constructor(owner: AActor, name: string = 'LightComponent') {
     super(owner, name);
   }

@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UMeshComponent, vec3, EventBus } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus } from '@game-creator/engine';
 import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
@@ -45,6 +45,10 @@ async function initEngine() {
 
     // Handle actor destruction requests from UI
     EventBus.on('RequestActorDestruction', (actor: any) => {
+      if (actor.getComponent && actor.getComponent(UDirectionalLightComponent)) {
+        console.warn('Cannot delete the Directional Light!');
+        return;
+      }
       world.destroyActor(actor);
     });
     // ------------------------------------

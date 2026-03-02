@@ -428,6 +428,74 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
+   * Generates a smooth UV sphere.
+   */
+  public createSphere(device: GPUDevice, radius: number = 1.0, latSegments: number = 16, lonSegments: number = 32, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+    this.topology = 'triangle-list';
+
+    const [r, g, b] = color;
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    for (let lat = 0; lat <= latSegments; lat++) {
+      const theta = (lat * Math.PI) / latSegments;
+      const sinTheta = Math.sin(theta);
+      const cosTheta = Math.cos(theta);
+
+      for (let lon = 0; lon <= lonSegments; lon++) {
+        const phi = (lon * 2 * Math.PI) / lonSegments;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        const x = cosPhi * sinTheta;
+        const y = cosTheta;
+        const z = sinPhi * sinTheta;
+
+        // Position
+        vertices.push(x * radius, y * radius, z * radius);
+        // Color
+        vertices.push(r, g, b);
+      }
+    }
+
+    for (let lat = 0; lat < latSegments; lat++) {
+      for (let lon = 0; lon < lonSegments; lon++) {
+        const first = lat * (lonSegments + 1) + lon;
+        const second = first + lonSegments + 1;
+
+        indices.push(first, second, first + 1);
+        indices.push(second, second + 1, first + 1);
+      }
+    }
+
+    this.vertexCount = vertices.length / 6;
+    this.indexCount = indices.length;
+
+    const vertexData = new Float32Array(vertices);
+    const indexData = new Uint16Array(indices);
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertexData);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indexData.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indexData);
+    this.indexBuffer.unmap();
+
+    this.material = new UMaterial();
+  }
+
+  /**
    * Cleans up GPU resources.
    */
   public override destroy(): void {

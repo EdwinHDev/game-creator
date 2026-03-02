@@ -1,4 +1,4 @@
-import { EventBus } from '@game-creator/engine';
+import { EventBus, UDirectionalLightComponent } from '@game-creator/engine';
 import './Resizer';
 import './Viewport';
 import './TopBar';
@@ -21,13 +21,14 @@ export class AppShell extends HTMLElement {
     // Global keyboard shortcuts
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Delete' && this.selectedActor) {
-        if (this.selectedActor.name !== 'MainCamera') {
-          // Get engine instance from the window or a global place if needed
-          // For now, we'll assume the engine's world is accessible via the actor
-          // (Actors in our engine don't have a direct reference to World, 
-          // but we can emit a request or use a global)
+        const isSun = this.selectedActor.name === 'MainCamera' ||
+          (this.selectedActor.getComponent && this.selectedActor.getComponent(UDirectionalLightComponent));
+
+        if (!isSun) {
           EventBus.emit('RequestActorDestruction', this.selectedActor);
           this.selectedActor = null;
+        } else {
+          console.warn(`Deletion blocked for protected actor: ${this.selectedActor.name}`);
         }
       }
     });

@@ -14,6 +14,34 @@ export class TopBar extends HTMLElement {
 
   connectedCallback() {
     this.render();
+
+    import('@game-creator/engine').then(({ EventBus, UDirectionalLightComponent }) => {
+      EventBus.on('OnActorSelected', (actor: AActor) => {
+        console.log(`TopBar: Selected actor ${actor.name}`);
+        const isSun = actor.getComponent(UDirectionalLightComponent);
+        const scaleBtn = this.querySelector('#btn-scale') as HTMLButtonElement;
+
+        if (scaleBtn) {
+          if (isSun) {
+            scaleBtn.disabled = true;
+            scaleBtn.style.opacity = '0.3';
+            scaleBtn.style.pointerEvents = 'none';
+            scaleBtn.title = 'Scaling is disabled for Directional Light';
+
+            // If we are currently in scale mode, switch to translate
+            const activeModeBtn = this.querySelector('.btn-tool.active');
+            if (activeModeBtn?.id === 'btn-scale') {
+              (this.querySelector('#btn-move') as HTMLElement).click();
+            }
+          } else {
+            scaleBtn.disabled = false;
+            scaleBtn.style.opacity = '1';
+            scaleBtn.style.pointerEvents = 'auto';
+            scaleBtn.title = '';
+          }
+        }
+      });
+    });
   }
 
   public render() {

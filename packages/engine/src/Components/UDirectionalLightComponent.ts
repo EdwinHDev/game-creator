@@ -7,6 +7,11 @@ import { vec3 } from 'gl-matrix';
  * Similar to the sun.
  */
 export class UDirectionalLightComponent extends ULightComponent {
+  /**
+   * Icon representation for the editor.
+   */
+  public iconTexture: string | null = null;
+
   constructor(owner: AActor, name: string = 'DirectionalLightComponent') {
     super(owner, name);
   }

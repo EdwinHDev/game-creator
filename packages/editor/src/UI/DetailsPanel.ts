@@ -1,4 +1,4 @@
-import { EventBus, quat } from '@game-creator/engine';
+import { EventBus, quat, UDirectionalLightComponent } from '@game-creator/engine';
 
 /**
  * Details Panel Web Component for inspecting and modifying actor properties.
@@ -60,6 +60,45 @@ export class DetailsPanel extends HTMLElement {
     if (sX && document.activeElement !== sX) sX.value = root.relativeScale[0].toFixed(2);
     if (sY && document.activeElement !== sY) sY.value = root.relativeScale[1].toFixed(2);
     if (sZ && document.activeElement !== sZ) sZ.value = root.relativeScale[2].toFixed(2);
+
+    // Rotation (Euler)
+    const rotX = this.querySelector('#rot-x') as HTMLInputElement;
+    const rotY = this.querySelector('#rot-y') as HTMLInputElement;
+    const rotZ = this.querySelector('#rot-z') as HTMLInputElement;
+    if (rotX && rotY && rotZ) {
+      const euler = this.quatToEuler(root.relativeRotation);
+      if (document.activeElement !== rotX) rotX.value = euler[0].toFixed(0);
+      if (document.activeElement !== rotY) rotY.value = euler[1].toFixed(0);
+      if (document.activeElement !== rotZ) rotZ.value = euler[2].toFixed(0);
+    }
+  }
+
+  private quatToEuler(q: any): number[] {
+    const w = q[3], x = q[0], y = q[1], z = q[2];
+
+    // Roll (X-axis rotation)
+    const sinr_cosp = 2 * (w * x + y * z);
+    const cosr_cosp = 1 - 2 * (x * x + y * y);
+    const roll = Math.atan2(sinr_cosp, cosr_cosp);
+
+    // Pitch (Y-axis rotation)
+    const sinp = 2 * (w * y - z * x);
+    let pitch: number;
+    if (Math.abs(sinp) >= 1)
+      pitch = (Math.PI / 2) * Math.sign(sinp);
+    else
+      pitch = Math.asin(sinp);
+
+    // Yaw (Z-axis rotation)
+    const siny_cosp = 2 * (w * z + x * y);
+    const cosy_cosp = 1 - 2 * (y * y + z * z);
+    const yaw = Math.atan2(siny_cosp, cosy_cosp);
+
+    return [
+      roll * (180 / Math.PI),
+      pitch * (180 / Math.PI),
+      yaw * (180 / Math.PI)
+    ];
   }
 
   private render() {
@@ -102,6 +141,72 @@ export class DetailsPanel extends HTMLElement {
     if (root && root.material) {
       this.renderMaterialUI(root.material);
     }
+
+    // 6. Light Section
+    const light = this.currentActor.getComponent(UDirectionalLightComponent);
+    if (light) {
+      this.renderLightUI(light);
+    }
+  }
+
+  private renderLightUI(light: any) {
+    const section = document.createElement('div');
+    section.style.padding = '15px';
+    section.style.borderTop = '1px solid var(--border-color)';
+
+    const sectionTitle = document.createElement('div');
+    sectionTitle.textContent = 'DIRECTIONAL LIGHT';
+    sectionTitle.style.fontSize = '10px';
+    sectionTitle.style.fontWeight = 'bold';
+    sectionTitle.style.marginBottom = '10px';
+    sectionTitle.style.opacity = '0.6';
+    section.appendChild(sectionTitle);
+
+    const group = document.createElement('div');
+    group.className = 'input-group';
+    group.innerHTML = `
+      <div style="margin-bottom: 8px;">
+        <label>Intensity</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="range" id="light-intensity-range" min="0" max="5" step="0.1" value="${light.intensity}" style="flex: 1;">
+          <input type="number" id="light-intensity-num" step="0.1" value="${light.intensity}" style="width: 50px;">
+        </div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label>Light Color</label>
+        <input type="color" id="light-color" value="${this.rgbToHex(light.color)}">
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="light-cast-shadows" ${light.castShadows ? 'checked' : ''} style="width: auto;">
+        <label style="margin: 0;">Cast Shadows</label>
+      </div>
+    `;
+    section.appendChild(group);
+    this.appendChild(section);
+
+    // Event Listeners
+    const intRange = group.querySelector('#light-intensity-range') as HTMLInputElement;
+    const intNum = group.querySelector('#light-intensity-num') as HTMLInputElement;
+    const colorInput = group.querySelector('#light-color') as HTMLInputElement;
+    const shadowCheck = group.querySelector('#light-cast-shadows') as HTMLInputElement;
+
+    const updateIntensity = (val: string) => {
+      const v = parseFloat(val) || 0;
+      light.intensity = v;
+      intRange.value = v.toString();
+      intNum.value = v.toString();
+    };
+
+    intRange.addEventListener('input', (e) => updateIntensity((e.target as HTMLInputElement).value));
+    intNum.addEventListener('input', (e) => updateIntensity((e.target as HTMLInputElement).value));
+
+    colorInput.addEventListener('input', (e) => {
+      this.hexToRgb((e.target as HTMLInputElement).value, light.color);
+    });
+
+    shadowCheck.addEventListener('change', (e) => {
+      light.castShadows = (e.target as HTMLInputElement).checked;
+    });
   }
 
   private renderMaterialUI(material: any) {

@@ -41,6 +41,22 @@ export class AActor extends UObject {
   }
 
   /**
+   * Finds the first component of the given class.
+   * @param componentClass The class to search for.
+   * @returns The component if found, otherwise null.
+   */
+  public getComponent<T extends UActorComponent>(
+    componentClass: new (...args: any[]) => T
+  ): T | null {
+    for (const component of this.components) {
+      if (component instanceof componentClass) {
+        return component as T;
+      }
+    }
+    return null;
+  }
+
+  /**
    * Called when the game starts for this actor.
    */
   public beginPlay(): void {

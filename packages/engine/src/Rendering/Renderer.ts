@@ -18,6 +18,8 @@ export class Renderer {
   private outlinePipeline: GPURenderPipeline | null = null;
   private gizmoOverlayPipeline: GPURenderPipeline | null = null;
   private gizmoTriangleOverlayPipeline: GPURenderPipeline | null = null;
+  private billboardPipeline: GPURenderPipeline | null = null;
+  private billboardQuadBuffer: GPUBuffer | null = null;
 
   // Cache for uniform buffers to avoid re-allocation every frame
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -123,23 +125,20 @@ export class Renderer {
       fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
           let N = normalize(in.normal);
           let L = normalize(-scene.lightDirection.xyz);
-          let diffuse = max(dot(N, L), 0.0);
+          let diffuseIntensity = max(dot(N, L), 0.0);
           
-          // Shadow Calculation (Perspective divide & map to 0-1)
+          // Shadow Calculation
           let projCoords = in.fragPosLightSpace.xyz / in.fragPosLightSpace.w;
-          let flipY = vec2<f32>(projCoords.x, -projCoords.y); 
-          let uv = flipY * 0.5 + 0.5;
+          let uv = vec2<f32>(projCoords.x, -projCoords.y) * 0.5 + 0.5;
           
-          // 1. Unconditional sampling
           var shadow = textureSampleCompare(shadowMap, shadowSampler, uv, projCoords.z - 0.005);
-          
-          // 2. Out of bounds handling
-          if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || projCoords.z > 1.0 || projCoords.z < 0.0) {
+          if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || projCoords.z > 1.0) {
               shadow = 1.0; 
           }
 
-          // World Lighting: Ambient (0.2) + Diffuse (Directional * Shadow)
-          let lighting = (0.2 + (diffuse * shadow)) * scene.lightColor.rgb;
+          // Full Lambert: ambient + (diffuse * intensity * shadow)
+          let ambient = 0.2;
+          let lighting = (ambient + (diffuseIntensity * shadow)) * scene.lightColor.rgb;
           return vec4<f32>(uniforms.baseColor.rgb * lighting, uniforms.baseColor.a);
       }
     `;
@@ -447,6 +446,88 @@ export class Renderer {
       // No DepthStencil block here to allow it to be used in depth-less pass
     });
 
+    // --- Phase 20: Billboard Pipeline (Icons) ---
+    const billboardShaderCode = `
+      struct BillboardUniforms {
+          viewMatrix: mat4x4<f32>,
+          projectionMatrix: mat4x4<f32>,
+          worldPos: vec3<f32>,
+          size: f32,
+          color: vec4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: BillboardUniforms;
+
+      struct VertexOut {
+          @builtin(position) pos: vec4<f32>,
+          @location(0) uv: vec2<f32>,
+      }
+
+      @vertex
+      fn vs_main(@location(0) pos: vec2<f32>) -> VertexOut {
+          var out: VertexOut;
+          
+          // Create a billboard in view space
+          let posView = (uniforms.viewMatrix * vec4<f32>(uniforms.worldPos, 1.0)).xyz;
+          let offset = pos * uniforms.size;
+          out.pos = uniforms.projectionMatrix * vec4<f32>(posView.xy + offset, posView.z, 1.0);
+          out.uv = pos * 0.5 + 0.5;
+          return out;
+      }
+
+      @fragment
+      fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+          let dist = length(in.uv - 0.5);
+          if (dist > 0.45) { discard; }
+          
+          // Core Circle
+          var color = uniforms.color.rgb;
+          
+          // Subtle glow
+          let glow = 1.0 - smoothstep(0.2, 0.45, dist);
+          return vec4<f32>(color, uniforms.color.a * glow);
+      }
+    `;
+    const billboardShaderModule = this.device.createShaderModule({ code: billboardShaderCode });
+
+    this.billboardPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: billboardShaderModule,
+        entryPoint: 'vs_main',
+        buffers: [{
+          arrayStride: 8,
+          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
+        }],
+      },
+      fragment: {
+        module: billboardShaderModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+          }
+        }],
+      },
+      primitive: { topology: 'triangle-strip' },
+      depthStencil: {
+        depthWriteEnabled: false,
+        depthCompare: 'less',
+        format: 'depth24plus',
+      },
+    });
+
+    // Create unit quad for billboards [-1, 1]
+    const quadData = new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]);
+    this.billboardQuadBuffer = this.device.createBuffer({
+      size: quadData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.billboardQuadBuffer.getMappedRange()).set(quadData);
+    this.billboardQuadBuffer.unmap();
+
     Logger.info("WebGPU Renderer initialized with Selection Outlines and Gizmo Overlay support.");
   }
 
@@ -497,12 +578,12 @@ export class Renderer {
     const lightProjectionMatrix = mat4.create();
     const lightViewProj = mat4.create();
 
-    // Orthographic projection for directional light
-    mat4.ortho(lightProjectionMatrix, -50, 50, -50, 50, 1, 500);
+    // Proyección Ortográfica: Caja de 40x40 metros
+    mat4.ortho(lightProjectionMatrix, -20, 20, -20, 20, 1, 500);
 
-    // View matrix looking from lightDir towards origin
+    // Posición de luz virtual: -lightDirection * 50
     const lightPos = vec3.create();
-    vec3.scale(lightPos, lightDir, -100); // 100 units away from origin
+    vec3.scale(lightPos, lightDir, -50);
     mat4.lookAt(lightViewMatrix, lightPos, [0, 0, 0], [0, 1, 0]);
 
     mat4.multiply(lightViewProj, lightProjectionMatrix, lightViewMatrix);
@@ -513,109 +594,96 @@ export class Renderer {
     sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 20); // color (offset 80)
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
-    // 4. Shadow Pass Command Encoding
-    const shadowEncoder = this.device.createCommandEncoder();
+    // Single Encoder for everything
+    const commandEncoder = this.device.createCommandEncoder();
 
-    // --- Phase 16: Shadow Pass ---
-    const shadowPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [],
-      depthStencilAttachment: {
-        view: this.shadowView!,
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
-      },
-    };
+    // 4. Shadow Pass
+    const shouldCastShadows = directionalLight ? directionalLight.castShadows : true;
+    if (shouldCastShadows) {
+      const shadowPassDescriptor: GPURenderPassDescriptor = {
+        colorAttachments: [],
+        depthStencilAttachment: {
+          view: this.shadowView!,
+          depthClearValue: 1.0,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store',
+        },
+      };
 
-    const shadowPass = shadowEncoder.beginRenderPass(shadowPassDescriptor);
-    shadowPass.setPipeline(this.shadowPipeline!);
+      const shadowPass = commandEncoder.beginRenderPass(shadowPassDescriptor);
+      shadowPass.setPipeline(this.shadowPipeline!);
 
-    for (const actor of world.actors) {
-      for (const component of actor.components) {
-        if (component instanceof UMeshComponent && component.vertexBuffer && component.topology === 'triangle-list') {
-          // In shadow pass, we only draw triangle meshes
-          const modelMatrix = component.getTransformMatrix();
-          const lightMVP = mat4.create();
-          mat4.multiply(lightMVP, lightViewProj, modelMatrix);
+      for (const actor of world.actors) {
+        for (const component of actor.components) {
+          if (component instanceof UMeshComponent && component.vertexBuffer && component.topology === 'triangle-list' && !component.isGizmo) {
+            const modelMatrix = component.getTransformMatrix();
+            const lightMVP = mat4.create();
+            mat4.multiply(lightMVP, lightViewProj, modelMatrix);
 
-          // Reuse uniform buffer logic but we need to write shadow MVP to offset 0
-          let uniformBuffer = this.uniformBuffers.get(component.id);
-          if (!uniformBuffer) {
-            uniformBuffer = this.device.createBuffer({
-              size: 144, // MVP (64) + Model (64) + Color (16)
-              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-            this.uniformBuffers.set(component.id, uniformBuffer);
-          }
-          this.device.queue.writeBuffer(uniformBuffer, 0, lightMVP as any);
+            let uniformBuffer = this.uniformBuffers.get(component.id);
+            if (!uniformBuffer) {
+              uniformBuffer = this.device.createBuffer({
+                size: 144,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+              });
+              this.uniformBuffers.set(component.id, uniformBuffer);
+            }
+            this.device.queue.writeBuffer(uniformBuffer, 0, lightMVP as any);
 
-          // Draw for shadow (simplified)
-          let bindGroup = this.bindGroups.get(component.id + "_shadow");
-          if (!bindGroup) {
-            bindGroup = this.device.createBindGroup({
-              layout: this.shadowPipeline!.getBindGroupLayout(0),
-              entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
-            });
-            this.bindGroups.set(component.id + "_shadow", bindGroup);
-          }
+            let bindGroup = this.bindGroups.get(component.id + "_shadow");
+            if (!bindGroup) {
+              bindGroup = this.device.createBindGroup({
+                layout: this.shadowPipeline!.getBindGroupLayout(0),
+                entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+              });
+              this.bindGroups.set(component.id + "_shadow", bindGroup);
+            }
 
-          shadowPass.setBindGroup(0, bindGroup);
-          shadowPass.setVertexBuffer(0, component.vertexBuffer);
-          if (component.indexBuffer) {
-            shadowPass.setIndexBuffer(component.indexBuffer, 'uint16');
-            shadowPass.drawIndexed(component.indexCount);
-          } else {
-            shadowPass.draw(component.vertexCount);
+            shadowPass.setBindGroup(0, bindGroup);
+            shadowPass.setVertexBuffer(0, component.vertexBuffer);
+            if (component.indexBuffer) {
+              shadowPass.setIndexBuffer(component.indexBuffer, 'uint16');
+              shadowPass.drawIndexed(component.indexCount);
+            } else {
+              shadowPass.draw(component.vertexCount);
+            }
           }
         }
       }
+      shadowPass.end();
     }
-    shadowPass.end();
-
-    // Submit shadow pass so we can update buffers for main pass
-    this.device.queue.submit([shadowEncoder.finish()]);
 
     // 5. Main Pass
     const textureView = this.context.getCurrentTexture().createView();
-
-    // Create Depth Texture for this pass
     const depthTexture = this.device.createTexture({
       size: [this.context.getCurrentTexture().width, this.context.getCurrentTexture().height],
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
+    const depthTextureView = depthTexture.createView();
 
     const renderPassDescriptor: GPURenderPassDescriptor = {
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0.15, g: 0.15, b: 0.18, a: 1.0 },
-          loadOp: 'clear',
-          storeOp: 'store'
-        }
-      ],
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0.15, g: 0.15, b: 0.18, a: 1.0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }],
       depthStencilAttachment: {
-        view: depthTexture.createView(),
+        view: depthTextureView,
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
       },
     };
 
-    const mainEncoder = this.device.createCommandEncoder();
-    const passEncoder = mainEncoder.beginRenderPass(renderPassDescriptor);
-
-    // Bind scene-wide data (Group 1)
+    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setBindGroup(1, this.sceneBindGroup!);
 
-    // 6. Main Draw Loop
     for (const actor of world.actors) {
       const isSelected = actor.id === world.selectedActorId;
-
       for (const component of actor.components) {
-        if (component instanceof UMeshComponent && component.vertexBuffer) {
-          if (component.isGizmo) continue; // Draw gizmos in a separate pass
-
+        if (component instanceof UMeshComponent && component.vertexBuffer && !component.isGizmo) {
           if (isSelected && component.topology === 'triangle-list') {
             this.drawOutline(passEncoder, component, viewProjMatrix);
           }
@@ -623,33 +691,93 @@ export class Renderer {
         }
       }
     }
-
     passEncoder.end();
 
-    // 7. NEW: Gizmo Overlay Pass (Separate Pass, NO Depth Stencil for absolute X-Ray)
-    const gizmoPassEncoder = mainEncoder.beginRenderPass({
+    // 6. Billboard Pass
+    this.drawBillboards(commandEncoder, world, mainCamera, aspectRatio, textureView, depthTextureView);
+
+    // 7. Gizmo Overlay Pass
+    const gizmoPassEncoder = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: textureView,
-        clearValue: { r: 0, g: 0, b: 0, a: 0 }, // Not actually used by loadOp
         loadOp: 'load',
         storeOp: 'store',
       }],
-      // NO Depth Stencil Attachment = Absolute X-Ray dominance
     });
 
     for (const actor of world.actors) {
       for (const component of actor.components) {
-        if (component instanceof UMeshComponent && component.vertexBuffer) {
-          if (component.isGizmo) {
-            this.drawMesh(gizmoPassEncoder, component, viewProjMatrix);
-          }
+        if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
+          this.drawMesh(gizmoPassEncoder, component, viewProjMatrix);
         }
       }
     }
     gizmoPassEncoder.end();
 
-    // Finally submit both passes
-    this.device.queue.submit([mainEncoder.finish()]);
+    // Final Submission
+    this.device.queue.submit([commandEncoder.finish()]);
+  }
+
+  private drawBillboards(encoder: GPUCommandEncoder, world: World, camera: UCameraComponent, aspectRatio: number, colorView: GPUTextureView, depthView: GPUTextureView): void {
+    if (!this.device || !this.billboardPipeline || !this.billboardQuadBuffer) return;
+
+    const passEncoder = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: colorView,
+        loadOp: 'load',
+        storeOp: 'store',
+      }],
+      depthStencilAttachment: {
+        view: depthView,
+        depthLoadOp: 'load',
+        depthStoreOp: 'store',
+      },
+    });
+
+    passEncoder.setPipeline(this.billboardPipeline);
+    passEncoder.setVertexBuffer(0, this.billboardQuadBuffer);
+
+    const viewMatrix = camera.getViewMatrix();
+    const projectionMatrix = camera.getProjectionMatrix(aspectRatio);
+
+    for (const actor of world.actors) {
+      for (const component of actor.components) {
+        if (component instanceof UDirectionalLightComponent) {
+          const worldPos = actor.rootComponent!.relativeLocation;
+
+          let uniformBuffer = this.uniformBuffers.get(actor.id + "_billboard");
+          if (!uniformBuffer) {
+            uniformBuffer = this.device.createBuffer({
+              size: 192, // 2*mat4 (128) + vec3 (12) + float (4) + vec4 (16) + padding
+              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            this.uniformBuffers.set(actor.id + "_billboard", uniformBuffer);
+          }
+
+          const billboardData = new Float32Array(40); // 16+16+4+4
+          billboardData.set(viewMatrix as any, 0);
+          billboardData.set(projectionMatrix as any, 16);
+          billboardData.set(worldPos, 32);
+          billboardData[35] = 1.0; // Size
+          billboardData.set([1.0, 0.84, 0.0, 1.0], 36); // Golden Yellow
+
+          this.device.queue.writeBuffer(uniformBuffer, 0, billboardData);
+
+          let bindGroup = this.bindGroups.get(actor.id + "_billboard");
+          if (!bindGroup) {
+            bindGroup = this.device.createBindGroup({
+              layout: this.billboardPipeline.getBindGroupLayout(0),
+              entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+            });
+            this.bindGroups.set(actor.id + "_billboard", bindGroup);
+          }
+
+          passEncoder.setBindGroup(0, bindGroup);
+          passEncoder.draw(4);
+        }
+      }
+    }
+    passEncoder.end();
   }
 
   private drawOutline(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, viewProjMatrix: mat4): void {

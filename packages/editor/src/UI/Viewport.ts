@@ -1,5 +1,5 @@
 import {
-  EventBus, AActor, UDirectionalLightComponent, quat, vec3, World, Engine
+  EventBus, AActor, UDirectionalLightComponent, quat, vec3, World
 } from '@game-creator/engine';
 import { GizmoManager } from '../Systems/GizmoManager';
 
@@ -45,6 +45,7 @@ export class Viewport extends HTMLElement {
     lightActor.rootComponent = sun;
 
     sun.intensity = 1.2;
+    vec3.set(sun.relativeLocation, 0, 15, 0); // Raised sun
     quat.fromEuler(sun.relativeRotation, -45, -45, 0);
     // ------------------------------------
 
