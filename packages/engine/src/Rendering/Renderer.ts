@@ -1,4 +1,8 @@
+import { mat4 } from 'gl-matrix';
 import { Logger } from '../Core/Logger';
+import { World } from '../Framework/World';
+import { UCameraComponent } from '../Components/UCameraComponent';
+import { UMeshComponent } from '../Components/UMeshComponent';
 
 /**
  * Handles WebGPU rendering operations and GPU resource management.
@@ -9,7 +13,18 @@ export class Renderer {
   private format: GPUTextureFormat = 'bgra8unorm';
   private pipeline: GPURenderPipeline | null = null;
 
+  // Cache for uniform buffers to avoid re-allocation every frame
+  private uniformBuffers: Map<string, GPUBuffer> = new Map();
+  private bindGroups: Map<string, GPUBindGroup> = new Map();
+
   constructor() { }
+
+  /**
+   * Returns the WebGPU device.
+   */
+  public getDevice(): GPUDevice | null {
+    return this.device;
+  }
 
   /**
    * Initializes WebGPU context and device.
@@ -91,7 +106,7 @@ export class Renderer {
         topology: 'triangle-list',
         cullMode: 'back',
       },
-      depthStencil: undefined, // Simple 3D for now without depth buffer
+      // Note: We are missing a depth buffer here, but for a single cube it's fine.
     });
 
     Logger.info("WebGPU Renderer initialized successfully with MVP pipeline");
@@ -100,9 +115,29 @@ export class Renderer {
   /**
    * Performs the main render pass.
    */
-  public render(): void {
+  public render(world: World): void {
     if (!this.device || !this.context || !this.pipeline) return;
 
+    // 1. Find the first active camera
+    let mainCamera: UCameraComponent | null = null;
+    for (const actor of world.actors) {
+      if (actor.rootComponent instanceof UCameraComponent) {
+        mainCamera = actor.rootComponent;
+        break;
+      }
+    }
+
+    if (!mainCamera) return;
+
+    // 2. Prepare View and Projection matrices
+    const aspectRatio = this.context.getCurrentTexture().width / this.context.getCurrentTexture().height;
+    const viewMatrix = mainCamera.getViewMatrix();
+    const projectionMatrix = mainCamera.getProjectionMatrix(aspectRatio);
+
+    const vpMatrix = mat4.create();
+    mat4.multiply(vpMatrix, projectionMatrix, viewMatrix);
+
+    // 3. Command Encoding
     const commandEncoder = this.device.createCommandEncoder();
     const textureView = this.context.getCurrentTexture().createView();
 
@@ -120,10 +155,68 @@ export class Renderer {
     const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
     passEncoder.setPipeline(this.pipeline);
 
-    // In future phases, we will bind groups and draw meshes here
+    // 4. Iterate over meshes
+    for (const actor of world.actors) {
+      for (const component of actor.components) {
+        if (component instanceof UMeshComponent && component.vertexBuffer) {
+          this.drawMesh(passEncoder, component, vpMatrix);
+        }
+      }
+    }
 
     passEncoder.end();
-
     this.device.queue.submit([commandEncoder.finish()]);
+  }
+
+  private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, vpMatrix: mat4): void {
+    if (!this.device || !this.pipeline) return;
+
+    // Calculate Model matrix
+    const modelMatrix = mat4.create();
+    mat4.fromRotationTranslationScale(
+      modelMatrix,
+      mesh.relativeRotation,
+      mesh.relativeLocation,
+      mesh.relativeScale
+    );
+
+    // Calculate MVP
+    const mvpMatrix = mat4.create();
+    mat4.multiply(mvpMatrix, vpMatrix, modelMatrix);
+
+    // Update or Create Uniform Buffer for this mesh
+    let uniformBuffer = this.uniformBuffers.get(mesh.id);
+    if (!uniformBuffer) {
+      uniformBuffer = this.device.createBuffer({
+        size: 64, // 4x4 matrix
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.uniformBuffers.set(mesh.id, uniformBuffer);
+    }
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix as any);
+
+    // Update or Create Bind Group
+    let bindGroup = this.bindGroups.get(mesh.id);
+    if (!bindGroup) {
+      bindGroup = this.device.createBindGroup({
+        layout: this.pipeline.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: uniformBuffer,
+            },
+          },
+        ],
+      });
+      this.bindGroups.set(mesh.id, bindGroup);
+    }
+
+    // Set buffers and draw
+    passEncoder.setBindGroup(0, bindGroup);
+    passEncoder.setVertexBuffer(0, mesh.vertexBuffer);
+    passEncoder.setIndexBuffer(mesh.indexBuffer!, 'uint16');
+    passEncoder.drawIndexed(mesh.indexCount);
   }
 }

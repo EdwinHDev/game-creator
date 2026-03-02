@@ -1,6 +1,6 @@
 import './styles/tokens.css';
 import './UI/AppShell';
-import { Engine } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UMeshComponent, vec3 } from '@game-creator/engine';
 
 console.log('Game Creator Editor Initialized');
 
@@ -10,6 +10,23 @@ async function initEngine() {
     const canvas = viewport.getCanvas();
     const engine = new Engine();
     await engine.initialize(canvas);
+
+    // --- Phase 7: Test Scene Setup ---
+    const world = engine.getWorld();
+
+    // 1. Setup Camera
+    const cameraActor = world.spawnActor(AActor, 'MainCamera');
+    const camera = cameraActor.addComponent(UCameraComponent);
+    cameraActor.rootComponent = camera;
+    vec3.set(camera.relativeLocation, 0, 0, 5); // Pull back to see the center
+
+    // 2. Setup Test Cube
+    const cubeActor = world.spawnActor(AActor, 'TestCube');
+    const mesh = cubeActor.addComponent(UMeshComponent);
+    cubeActor.rootComponent = mesh;
+    mesh.createBox(engine.getRenderer().getDevice()!);
+    // ---------------------------------
+
     engine.start();
   }
 }

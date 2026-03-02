@@ -1,3 +1,4 @@
+export { vec3, mat4, quat } from 'gl-matrix';
 export * from './Core/Logger';
 export * from './Core/Errors';
 export * from './Core/EventBus';

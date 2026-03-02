@@ -1,3 +1,4 @@
+import { quat } from 'gl-matrix';
 import { USceneComponent } from '../Framework/USceneComponent';
 import { AActor } from '../Framework/AActor';
 
@@ -11,6 +12,17 @@ export class UMeshComponent extends USceneComponent {
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
     super(owner, name);
+  }
+
+  /**
+   * Constant rotation for testing purposes.
+   */
+  public override tick(deltaTime: number): void {
+    super.tick(deltaTime);
+
+    // Rotate slowly over time
+    quat.rotateY(this.relativeRotation, this.relativeRotation, deltaTime * 0.5);
+    quat.rotateX(this.relativeRotation, this.relativeRotation, deltaTime * 0.3);
   }
 
   /**

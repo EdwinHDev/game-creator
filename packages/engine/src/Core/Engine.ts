@@ -79,7 +79,7 @@ export class Engine {
     EventBus.emit('EngineTick', deltaTime);
 
     // Delegate rendering to WebGPU Renderer
-    this.renderer.render();
+    this.renderer.render(this.world);
   }
 
   /**
@@ -87,6 +87,13 @@ export class Engine {
    */
   public getWorld(): World {
     return this.world;
+  }
+
+  /**
+   * Returns the active renderer.
+   */
+  public getRenderer(): Renderer {
+    return this.renderer;
   }
 
   /**
