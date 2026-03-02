@@ -1,6 +1,7 @@
 import { Logger } from './Logger';
 import { EventBus } from './EventBus';
 import { Renderer } from '../Rendering/Renderer';
+import { World } from '../Framework/World';
 
 /**
  * Main application class of the engine.
@@ -12,9 +13,11 @@ export class Engine {
   private lastTime: number = 0;
   private animationFrameId: number | null = null;
   private renderer: Renderer;
+  private world: World;
 
   constructor() {
     this.renderer = new Renderer();
+    this.world = new World();
   }
 
   /**
@@ -33,6 +36,9 @@ export class Engine {
     if (this.isRunning) return;
     this.isRunning = true;
     this.lastTime = performance.now();
+
+    this.world.beginPlay();
+
     this.loop(this.lastTime);
     Logger.info("Engine loop started");
   }
@@ -66,11 +72,21 @@ export class Engine {
   private tick(deltaTime: number): void {
     this.resizeCanvasIfNeeded();
 
+    // Update game logic
+    this.world.tick(deltaTime);
+
     // Current temporary tick logic
     EventBus.emit('EngineTick', deltaTime);
 
     // Delegate rendering to WebGPU Renderer
     this.renderer.render();
+  }
+
+  /**
+   * Returns the current active world.
+   */
+  public getWorld(): World {
+    return this.world;
   }
 
   /**
