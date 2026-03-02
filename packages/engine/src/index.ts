@@ -5,6 +5,7 @@ export * from './Core/EventBus';
 export * from './Core/UObject';
 export * from './Core/Engine';
 export * from './Rendering/Renderer';
+export * from './Rendering/UMaterial';
 
 export * from './Framework/UActorComponent';
 export * from './Framework/USceneComponent';

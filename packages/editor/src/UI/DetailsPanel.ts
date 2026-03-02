@@ -70,6 +70,59 @@ export class DetailsPanel extends HTMLElement {
     if (root && root.relativeLocation) {
       this.renderTransformUI(root);
     }
+
+    // 5. Material Section
+    if (root && root.material) {
+      this.renderMaterialUI(root.material);
+    }
+  }
+
+  private renderMaterialUI(material: any) {
+    const section = document.createElement('div');
+    section.style.padding = '15px';
+    section.style.borderTop = '1px solid var(--border-color)';
+
+    const sectionTitle = document.createElement('div');
+    sectionTitle.textContent = 'MATERIAL';
+    sectionTitle.style.fontSize = '10px';
+    sectionTitle.style.fontWeight = 'bold';
+    sectionTitle.style.marginBottom = '10px';
+    sectionTitle.style.opacity = '0.6';
+    section.appendChild(sectionTitle);
+
+    const group = document.createElement('div');
+    group.className = 'input-group';
+    group.innerHTML = `
+      <label>Base Color</label>
+      <input type="color" id="mat-color" value="${this.rgbToHex(material.baseColor)}">
+    `;
+    section.appendChild(group);
+    this.appendChild(section);
+
+    const inputColor = group.querySelector('#mat-color') as HTMLInputElement;
+    if (inputColor) {
+      inputColor.addEventListener('input', (e) => {
+        const hex = (e.target as HTMLInputElement).value;
+        this.hexToRgb(hex, material.baseColor);
+      });
+    }
+  }
+
+  private rgbToHex(rgba: Float32Array): string {
+    const r = Math.round(rgba[0] * 255).toString(16).padStart(2, '0');
+    const g = Math.round(rgba[1] * 255).toString(16).padStart(2, '0');
+    const b = Math.round(rgba[2] * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  }
+
+  private hexToRgb(hex: string, out: Float32Array) {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    out[0] = r;
+    out[1] = g;
+    out[2] = b;
+    // out[3] remains 1.0 (Alpha)
   }
 
   private renderTransformUI(root: any) {

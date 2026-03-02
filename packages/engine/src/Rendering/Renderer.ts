@@ -56,6 +56,7 @@ export class Renderer {
     const shaderCode = `
       struct Uniforms {
           mvpMatrix: mat4x4<f32>,
+          baseColor: vec4<f32>,
       }
       @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -77,7 +78,7 @@ export class Renderer {
 
       @fragment
       fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-          return vec4<f32>(in.color, 1.0);
+          return uniforms.baseColor;
       }
     `;
 
@@ -265,16 +266,25 @@ export class Renderer {
     mat4.multiply(mvpMatrix, vpMatrix, modelMatrix);
 
     // Update or Create Uniform Buffer
+    const isLineList = mesh.topology === 'line-list';
+    const bufferSize = isLineList ? 64 : 80;
+
     let uniformBuffer = this.uniformBuffers.get(mesh.id);
     if (!uniformBuffer) {
       uniformBuffer = this.device.createBuffer({
-        size: 64,
+        size: bufferSize,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.uniformBuffers.set(mesh.id, uniformBuffer);
     }
 
     this.device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix as any);
+
+    // Write material color for triangle meshes
+    if (!isLineList) {
+      const color = mesh.material ? mesh.material.baseColor : new Float32Array([1, 1, 1, 1]);
+      this.device.queue.writeBuffer(uniformBuffer, 64, color as any);
+    }
 
     // Update or Create Bind Group
     let bindGroup = this.bindGroups.get(mesh.id);

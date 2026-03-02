@@ -1,6 +1,7 @@
 import { quat } from 'gl-matrix';
 import { USceneComponent } from '../Framework/USceneComponent';
 import { AActor } from '../Framework/AActor';
+import { UMaterial } from '../Rendering/UMaterial';
 
 /**
  * A component that represents a 3D mesh.
@@ -11,6 +12,7 @@ export class UMeshComponent extends USceneComponent {
   public indexCount: number = 0;
   public vertexCount: number = 0;
   public topology: GPUPrimitiveTopology = 'triangle-list';
+  public material: UMaterial | null = null;
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
     super(owner, name);
@@ -86,6 +88,9 @@ export class UMeshComponent extends USceneComponent {
     });
     new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
     this.indexBuffer.unmap();
+
+    // Initialize default material
+    this.material = new UMaterial();
   }
 
   /**
