@@ -3,3 +3,4 @@ export * from './Core/Errors';
 export * from './Core/EventBus';
 export * from './Core/UObject';
 export * from './Core/Engine';
+export * from './Rendering/Renderer';

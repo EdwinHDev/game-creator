@@ -15,6 +15,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "types": [
+      "@webgpu/types"
+    ],
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

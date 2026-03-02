@@ -15,7 +15,10 @@
     "strict": true,
     "skipLibCheck": true,
     "useDefineForClassFields": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "types": [
+      "@webgpu/types"
+    ]
   },
   "include": [
     "src"

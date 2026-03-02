@@ -5,5 +5,8 @@
   "main": "./src/index.ts",
   "scripts": {
     "build": "tsc"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.69"
   }
 }

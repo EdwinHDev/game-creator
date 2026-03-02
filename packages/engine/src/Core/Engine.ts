@@ -1,5 +1,6 @@
 import { Logger } from './Logger';
 import { EventBus } from './EventBus';
+import { Renderer } from '../Rendering/Renderer';
 
 /**
  * Main application class of the engine.
@@ -10,14 +11,18 @@ export class Engine {
   private isRunning: boolean = false;
   private lastTime: number = 0;
   private animationFrameId: number | null = null;
+  private renderer: Renderer;
 
-  constructor() { }
+  constructor() {
+    this.renderer = new Renderer();
+  }
 
   /**
    * Links the engine to a DOM canvas.
    */
   public async initialize(canvas: HTMLCanvasElement): Promise<void> {
     this.canvas = canvas;
+    await this.renderer.initialize(canvas);
     Logger.info("Engine attached to Canvas");
   }
 
@@ -64,19 +69,8 @@ export class Engine {
     // Current temporary tick logic
     EventBus.emit('EngineTick', deltaTime);
 
-    // Placeholder rendering visualization
-    if (this.canvas) {
-      const ctx = this.canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#1a1a1a'; // Dark gray background 
-        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // Simple "Heartbeat" indicator
-        ctx.fillStyle = '#007acc';
-        const pulse = (Math.sin(performance.now() / 500) + 1) / 2;
-        ctx.fillRect(10, 10, 10, 10 + pulse * 40);
-      }
-    }
+    // Delegate rendering to WebGPU Renderer
+    this.renderer.render();
   }
 
   /**
