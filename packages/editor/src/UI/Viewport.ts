@@ -31,7 +31,9 @@ export class Viewport extends HTMLElement {
   private dragAxis: 'X' | 'Y' | 'Z' | null = null;
   private dragStartActorPos: vec3 = vec3.create();
   private dragStartActorScale: vec3 = vec3.create();
+  private dragStartActorRotation: quat = quat.create();
   private dragStartMouseHit: vec3 = vec3.create();
+  private dragStartVector: vec3 = vec3.create();
 
   constructor() {
     super();
@@ -96,7 +98,12 @@ export class Viewport extends HTMLElement {
       actor.rootComponent = mesh;
 
       if (!isTip) {
-        mesh.createGizmoAxis(device, 1.0, color);
+        if (this.currentTransformMode === 'rotate') {
+          // In rotate mode, these are 1.1x scale rings
+          mesh.createCircle(device, 1.1, 64, color, name.split('_')[1] as any);
+        } else {
+          mesh.createGizmoAxis(device, 1.0, color);
+        }
       } else {
         if (this.currentTransformMode === 'translate') {
           mesh.createPyramid(device, 0.15, 0.05, color); // Solid X-Ray Pyramid (15% reduced)
@@ -118,9 +125,11 @@ export class Viewport extends HTMLElement {
     this.gizmoY = setupPart('Gizmo_Y', false, colY);
     this.gizmoZ = setupPart('Gizmo_Z', false, colZ);
 
-    this.arrowHeadX = setupPart('ArrowHead_X', true, colX);
-    this.arrowHeadY = setupPart('ArrowHead_Y', true, colY);
-    this.arrowHeadZ = setupPart('ArrowHead_Z', true, colZ);
+    if (this.currentTransformMode !== 'rotate') {
+      this.arrowHeadX = setupPart('ArrowHead_X', true, colX);
+      this.arrowHeadY = setupPart('ArrowHead_Y', true, colY);
+      this.arrowHeadZ = setupPart('ArrowHead_Z', true, colZ);
+    }
 
     this.handleTick(); // Force immediate update after reconstruction
   }
@@ -193,49 +202,72 @@ export class Viewport extends HTMLElement {
     let bestAxis: 'X' | 'Y' | 'Z' | null = null;
     let closestDist = Infinity;
 
-    for (const a of axes) {
-      const worldDir = vec3.create();
-      if (this.transformSpace === 'local') {
-        vec3.transformQuat(worldDir, a.dir, rot);
-      } else {
-        vec3.copy(worldDir, a.dir);
+    if (this.currentTransformMode === 'rotate') {
+      const radius = 1.1 * scaleFactor;
+      const ringThreshold = 0.1 * scaleFactor;
+
+      for (const a of axes) {
+        const planeNormal = vec3.create();
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(planeNormal, a.dir, rot);
+        } else {
+          vec3.copy(planeNormal, a.dir);
+        }
+
+        const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
+        if (hit) {
+          const distFromCenter = vec3.distance(hit, pos);
+          const diff = Math.abs(distFromCenter - radius);
+          if (diff < ringThreshold && diff < closestDist) {
+            closestDist = diff;
+            bestAxis = a.axis;
+            vec3.subtract(this.dragStartVector, hit, pos);
+            vec3.copy(this.dragStartMouseHit, hit);
+          }
+        }
       }
+    } else {
+      for (const a of axes) {
+        const worldDir = vec3.create();
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(worldDir, a.dir, rot);
+        } else {
+          vec3.copy(worldDir, a.dir);
+        }
 
-      // Algorithm: Closest distance between Mouse Ray (O, D) and Gizmo Segment (pos, pos + worldDir * gizmoSize)
-      // Reference: Real-Time Collision Detection (Christer Ericson)
-      const u = worldDir;
-      const v = ray.direction;
-      const w0 = vec3.create();
-      vec3.subtract(w0, pos, ray.origin);
+        const u = worldDir;
+        const v = ray.direction;
+        const w0 = vec3.create();
+        vec3.subtract(w0, pos, ray.origin);
 
-      const b = vec3.dot(u, v);
-      const d = vec3.dot(u, w0);
-      const e = vec3.dot(v, w0);
+        const b = vec3.dot(u, v);
+        const d = vec3.dot(u, w0);
+        const e = vec3.dot(v, w0);
 
-      const denom = 1.0 - b * b;
-      let sc, tc;
+        const denom = 1.0 - b * b;
+        let sc, tc;
 
-      if (denom < 0.0001) {
-        sc = -d;
-        tc = 0.0;
-      } else {
-        sc = (b * e - d) / denom;
-        tc = (e - b * d) / denom;
-      }
+        if (denom < 0.0001) {
+          sc = -d;
+          tc = 0.0;
+        } else {
+          sc = (b * e - d) / denom;
+          tc = (e - b * d) / denom;
+        }
 
-      // Clamp sc to the segment length [0, gizmoSize]
-      sc = Math.max(0, Math.min(sc, gizmoSize));
+        sc = Math.max(0, Math.min(sc, gizmoSize));
 
-      const P_axis = vec3.create();
-      vec3.scaleAndAdd(P_axis, pos, worldDir, sc);
-      const P_ray = vec3.create();
-      vec3.scaleAndAdd(P_ray, ray.origin, ray.direction, tc);
+        const P_axis = vec3.create();
+        vec3.scaleAndAdd(P_axis, pos, worldDir, sc);
+        const P_ray = vec3.create();
+        vec3.scaleAndAdd(P_ray, ray.origin, ray.direction, tc);
 
-      const distHit = vec3.distance(P_axis, P_ray);
+        const distHit = vec3.distance(P_axis, P_ray);
 
-      if (distHit < hitThreshold && distHit < closestDist) {
-        closestDist = distHit;
-        bestAxis = a.axis;
+        if (distHit < hitThreshold && distHit < closestDist) {
+          closestDist = distHit;
+          bestAxis = a.axis;
+        }
       }
     }
 
@@ -244,11 +276,14 @@ export class Viewport extends HTMLElement {
       this.dragAxis = bestAxis;
       vec3.copy(this.dragStartActorPos, pos);
       vec3.copy(this.dragStartActorScale, this.selectedActor.rootComponent.relativeScale);
+      quat.copy(this.dragStartActorRotation, this.selectedActor.rootComponent.relativeRotation);
 
-      const planeNormal = this.getDragPlaneNormal(bestAxis);
-      const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
-      if (hit) {
-        vec3.copy(this.dragStartMouseHit, hit);
+      if (this.currentTransformMode !== 'rotate') {
+        const planeNormal = this.getDragPlaneNormal(bestAxis);
+        const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
+        if (hit) {
+          vec3.copy(this.dragStartMouseHit, hit);
+        }
       }
     }
   };
@@ -276,7 +311,45 @@ export class Viewport extends HTMLElement {
       const pos = root.relativeLocation;
       const rot = root.relativeRotation;
 
-      if (this.currentTransformMode === 'translate') {
+      if (this.currentTransformMode === 'rotate') {
+        const rot = this.dragStartActorRotation;
+        const axisDir = vec3.fromValues(
+          this.dragAxis === 'X' ? 1 : 0,
+          this.dragAxis === 'Y' ? 1 : 0,
+          this.dragAxis === 'Z' ? 1 : 0
+        );
+        const worldAxis = vec3.create();
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(worldAxis, axisDir, rot);
+        } else {
+          vec3.copy(worldAxis, axisDir);
+        }
+
+        const hit = intersectRayPlane(ray.origin, ray.direction, pos, worldAxis);
+        if (hit) {
+          const currentVec = vec3.create();
+          vec3.subtract(currentVec, hit, pos);
+
+          // Calculate angle between vectors on the plane
+          // Project vectors to local 2D space of the plane if needed, or use a more direct method
+          // Direct method: angle between v1 and v2 around normal
+          const v1 = vec3.create(); vec3.normalize(v1, this.dragStartVector);
+          const v2 = vec3.create(); vec3.normalize(v2, currentVec);
+
+          let dot = vec3.dot(v1, v2);
+          dot = Math.max(-1, Math.min(1, dot));
+          let angle = Math.acos(dot);
+
+          const cross = vec3.create();
+          vec3.cross(cross, v1, v2);
+          if (vec3.dot(worldAxis, cross) < 0) angle = -angle;
+
+          const deltaQuat = quat.create();
+          quat.setAxisAngle(deltaQuat, worldAxis, angle);
+          quat.multiply(this.selectedActor.rootComponent.relativeRotation, deltaQuat, rot);
+          quat.normalize(this.selectedActor.rootComponent.relativeRotation, this.selectedActor.rootComponent.relativeRotation);
+        }
+      } else if (this.currentTransformMode === 'translate') {
         const moveAxis = vec3.create();
         if (this.dragAxis === 'X') vec3.set(moveAxis, 1, 0, 0);
         if (this.dragAxis === 'Y') vec3.set(moveAxis, 0, 1, 0);
@@ -336,7 +409,7 @@ export class Viewport extends HTMLElement {
       this._world.selectedActorId = actor ? actor.id : null;
     }
 
-    if (!actor || actor.isEditorOnly || (this.currentTransformMode !== 'translate' && this.currentTransformMode !== 'scale')) {
+    if (!actor || actor.isEditorOnly || (this.currentTransformMode !== 'translate' && this.currentTransformMode !== 'scale' && this.currentTransformMode !== 'rotate')) {
       this.hideGizmos();
     } else {
       this.rebuildGizmos();
@@ -359,7 +432,7 @@ export class Viewport extends HTMLElement {
       const pos = root.relativeLocation;
       const rot = root.relativeRotation;
 
-      if (this.currentTransformMode === 'translate' || this.currentTransformMode === 'scale') {
+      if (this.currentTransformMode === 'translate' || this.currentTransformMode === 'scale' || this.currentTransformMode === 'rotate') {
         // --- Phase 17.8: Constant Size Logic ---
         let camPos = vec3.fromValues(0, 10, 20); // Fallback
         for (const actor of this._world!.actors) {
@@ -377,7 +450,6 @@ export class Viewport extends HTMLElement {
           vec3.copy(actor.rootComponent.relativeLocation, pos);
 
           const finalOffset = vec3.create();
-          // Apply scaleFactor to offset so it stays at the visual tip
           vec3.set(finalOffset, localOffset[0] * scaleFactor, localOffset[1] * scaleFactor, localOffset[2] * scaleFactor);
 
           const worldOffset = vec3.create();
@@ -392,37 +464,39 @@ export class Viewport extends HTMLElement {
             const localQuat = quat.create();
             quat.fromEuler(localQuat, localRotEuler[0], localRotEuler[1], localRotEuler[2]);
             if (this.transformSpace === 'local') {
-              // Apply actor's rotation first, then the local rotation
               quat.multiply(actor.rootComponent.relativeRotation, rot, localQuat);
             } else {
-              // Only apply local rotation in global space
               quat.copy(actor.rootComponent.relativeRotation, localQuat);
             }
           } else {
             if (this.transformSpace === 'local') {
-              // In local space, gizmo aligns with actor's rotation
               quat.copy(actor.rootComponent.relativeRotation, rot);
             } else {
-              // In global space, gizmo is always identity rotation
               quat.identity(actor.rootComponent.relativeRotation);
             }
           }
 
-          // Apply constant size to component scale (with multiplier)
           const finalScale = scaleFactor * scaleMultiplier;
           vec3.set(actor.rootComponent.relativeScale, finalScale, finalScale, finalScale);
         };
 
-        // Sync Axes (Lines start at 0,0,0)
-        syncPart(this.gizmoX, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -90));
-        syncPart(this.gizmoY, vec3.fromValues(0, 0, 0));
-        syncPart(this.gizmoZ, vec3.fromValues(0, 0, 0), vec3.fromValues(90, 0, 0));
+        if (this.currentTransformMode === 'rotate') {
+          // Sync Rings (Center at 0,0,0)
+          syncPart(this.gizmoX, vec3.fromValues(0, 0, 0));
+          syncPart(this.gizmoY, vec3.fromValues(0, 0, 0));
+          syncPart(this.gizmoZ, vec3.fromValues(0, 0, 0));
+        } else {
+          // Sync Axes (Lines start at 0,0,0)
+          syncPart(this.gizmoX, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -90));
+          syncPart(this.gizmoY, vec3.fromValues(0, 0, 0));
+          syncPart(this.gizmoZ, vec3.fromValues(0, 0, 0), vec3.fromValues(90, 0, 0));
 
-        // Sync Arrow Heads (Positioned at 1.0 offset)
-        const tipMultiplier = this.currentTransformMode === 'scale' ? 0.05 : 1.0;
-        syncPart(this.arrowHeadX, vec3.fromValues(1.0, 0, 0), vec3.fromValues(0, 0, -90), tipMultiplier);
-        syncPart(this.arrowHeadY, vec3.fromValues(0, 1.0, 0), undefined, tipMultiplier);
-        syncPart(this.arrowHeadZ, vec3.fromValues(0, 0, 1.0), vec3.fromValues(90, 0, 0), tipMultiplier);
+          // Sync Arrow Heads (Positioned at 1.0 offset)
+          const tipMultiplier = this.currentTransformMode === 'scale' ? 0.05 : 1.0;
+          syncPart(this.arrowHeadX, vec3.fromValues(1.0, 0, 0), vec3.fromValues(0, 0, -90), tipMultiplier);
+          syncPart(this.arrowHeadY, vec3.fromValues(0, 1.0, 0), undefined, tipMultiplier);
+          syncPart(this.arrowHeadZ, vec3.fromValues(0, 0, 1.0), vec3.fromValues(90, 0, 0), tipMultiplier);
+        }
       } else {
         this.hideGizmos();
       }

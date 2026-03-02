@@ -306,27 +306,36 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a line-based circle for origin or rotation gizmos.
    */
-  public createCircle(device: GPUDevice, radius: number = 1.0, segments: number = 32): void {
+  public createCircle(device: GPUDevice, radius: number = 1.0, segments: number = 64, color: number[] = [1, 1, 1], axis: 'X' | 'Y' | 'Z' = 'Y'): void {
     this.vertexBuffer?.destroy();
     this.topology = 'line-list';
 
+    const [r, g, b] = color;
     const vertices = new Float32Array(segments * 2 * 6); // 2 vertices per segment * 6 floats
     for (let i = 0; i < segments; i++) {
       const angle1 = (i / segments) * Math.PI * 2;
       const angle2 = ((i + 1) / segments) * Math.PI * 2;
 
-      const x1 = Math.cos(angle1) * radius;
-      const z1 = Math.sin(angle1) * radius;
-      const x2 = Math.cos(angle2) * radius;
-      const z2 = Math.sin(angle2) * radius;
+      let x1, y1, z1, x2, y2, z2;
+
+      if (axis === 'X') {
+        x1 = 0; y1 = Math.cos(angle1) * radius; z1 = Math.sin(angle1) * radius;
+        x2 = 0; y2 = Math.cos(angle2) * radius; z2 = Math.sin(angle2) * radius;
+      } else if (axis === 'Y') {
+        x1 = Math.cos(angle1) * radius; y1 = 0; z1 = Math.sin(angle1) * radius;
+        x2 = Math.cos(angle2) * radius; y2 = 0; z2 = Math.sin(angle2) * radius;
+      } else { // Z
+        x1 = Math.cos(angle1) * radius; y1 = Math.sin(angle1) * radius; z1 = 0;
+        x2 = Math.cos(angle2) * radius; y2 = Math.sin(angle2) * radius; z2 = 0;
+      }
 
       const off = i * 12;
       // Vert 1
-      vertices[off + 0] = x1; vertices[off + 1] = 0; vertices[off + 2] = z1;
-      vertices[off + 3] = 0; vertices[off + 4] = 1; vertices[off + 5] = 0;
+      vertices[off + 0] = x1; vertices[off + 1] = y1; vertices[off + 2] = z1;
+      vertices[off + 3] = r; vertices[off + 4] = g; vertices[off + 5] = b;
       // Vert 2
-      vertices[off + 6] = x2; vertices[off + 7] = 0; vertices[off + 8] = z2;
-      vertices[off + 9] = 0; vertices[off + 10] = 1; vertices[off + 11] = 0;
+      vertices[off + 6] = x2; vertices[off + 7] = y2; vertices[off + 8] = z2;
+      vertices[off + 9] = r; vertices[off + 10] = g; vertices[off + 11] = b;
     }
 
     this.vertexCount = segments * 2;
