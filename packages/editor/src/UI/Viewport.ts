@@ -18,6 +18,11 @@ export class Viewport extends HTMLElement {
   private gizmoY: AActor | null = null;
   private gizmoZ: AActor | null = null;
 
+  // Arrow Heads
+  private arrowHeadX: AActor | null = null;
+  private arrowHeadY: AActor | null = null;
+  private arrowHeadZ: AActor | null = null;
+
   private currentTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
 
   // Interaction State
@@ -75,6 +80,11 @@ export class Viewport extends HTMLElement {
     this.gizmoY = this._world.spawnActor(AActor, 'Gizmo_Y', true);
     this.gizmoZ = this._world.spawnActor(AActor, 'Gizmo_Z', true);
 
+    // Create 3 Actors for Arrow Heads
+    this.arrowHeadX = this._world.spawnActor(AActor, 'ArrowHead_X', true);
+    this.arrowHeadY = this._world.spawnActor(AActor, 'ArrowHead_Y', true);
+    this.arrowHeadZ = this._world.spawnActor(AActor, 'ArrowHead_Z', true);
+
     const setupGizmo = (actor: AActor, color: number[], scale: vec3) => {
       const mesh = actor.addComponent(UMeshComponent);
       actor.rootComponent = mesh;
@@ -83,13 +93,27 @@ export class Viewport extends HTMLElement {
         mesh.material.baseColor = new Float32Array([...color, 1.0]);
       }
       vec3.copy(mesh.relativeScale, scale);
-      // Hide initially
       mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
     };
 
-    setupGizmo(this.gizmoX, [1, 0.1, 0.1], vec3.fromValues(2.0, 0.05, 0.05)); // Thin Red Box
-    setupGizmo(this.gizmoY, [0.1, 1, 0.1], vec3.fromValues(0.05, 2.0, 0.05)); // Thin Green Box
-    setupGizmo(this.gizmoZ, [0.1, 0.1, 1], vec3.fromValues(0.05, 0.05, 2.0)); // Thin Blue Box
+    const setupArrow = (actor: AActor, color: number[]) => {
+      const mesh = actor.addComponent(UMeshComponent);
+      actor.rootComponent = mesh;
+      mesh.createPyramid(device, 0.3, 0.1);
+      if (mesh.material) {
+        mesh.material.baseColor = new Float32Array([...color, 1.0]);
+      }
+      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
+    };
+
+    // Phase 17.4: Reduced scales (50%)
+    setupGizmo(this.gizmoX, [1, 0.1, 0.1], vec3.fromValues(1.0, 0.025, 0.025));
+    setupGizmo(this.gizmoY, [0.1, 1, 0.1], vec3.fromValues(0.025, 1.0, 0.025));
+    setupGizmo(this.gizmoZ, [0.1, 0.1, 1], vec3.fromValues(0.025, 0.025, 1.0));
+
+    setupArrow(this.arrowHeadX, [1, 0.1, 0.1]);
+    setupArrow(this.arrowHeadY, [0.1, 1, 0.1]);
+    setupArrow(this.arrowHeadZ, [0.1, 0.1, 1]);
   }
 
   connectedCallback() {
@@ -232,6 +256,9 @@ export class Viewport extends HTMLElement {
     if (this.gizmoX?.rootComponent) vec3.copy(this.gizmoX.rootComponent.relativeLocation, hidePos);
     if (this.gizmoY?.rootComponent) vec3.copy(this.gizmoY.rootComponent.relativeLocation, hidePos);
     if (this.gizmoZ?.rootComponent) vec3.copy(this.gizmoZ.rootComponent.relativeLocation, hidePos);
+    if (this.arrowHeadX?.rootComponent) vec3.copy(this.arrowHeadX.rootComponent.relativeLocation, hidePos);
+    if (this.arrowHeadY?.rootComponent) vec3.copy(this.arrowHeadY.rootComponent.relativeLocation, hidePos);
+    if (this.arrowHeadZ?.rootComponent) vec3.copy(this.arrowHeadZ.rootComponent.relativeLocation, hidePos);
   }
 
   private handleTick = () => {
@@ -241,32 +268,31 @@ export class Viewport extends HTMLElement {
       const rot = root.relativeRotation;
 
       if (this.currentTransformMode === 'translate') {
-        // Sync Gizmos with Selected Actor
-        // Offset them so they represent "arrows" starting from the center
-        // X Gizmo: move 1.0 units in its local X
-        if (this.gizmoX?.rootComponent) {
-          vec3.copy(this.gizmoX.rootComponent.relativeLocation, pos);
-          const offset = vec3.fromValues(2, 0, 0);
-          vec3.transformQuat(offset, offset, rot);
-          vec3.add(this.gizmoX.rootComponent.relativeLocation, this.gizmoX.rootComponent.relativeLocation, offset);
-          quat.copy(this.gizmoX.rootComponent.relativeRotation, rot);
-        }
+        const syncPart = (actor: AActor | null, localOffset: vec3, localRotEuler?: vec3) => {
+          if (!actor?.rootComponent) return;
+          vec3.copy(actor.rootComponent.relativeLocation, pos);
+          const worldOffset = vec3.create();
+          vec3.transformQuat(worldOffset, localOffset, rot);
+          vec3.add(actor.rootComponent.relativeLocation, actor.rootComponent.relativeLocation, worldOffset);
 
-        if (this.gizmoY?.rootComponent) {
-          vec3.copy(this.gizmoY.rootComponent.relativeLocation, pos);
-          const offset = vec3.fromValues(0, 2, 0);
-          vec3.transformQuat(offset, offset, rot);
-          vec3.add(this.gizmoY.rootComponent.relativeLocation, this.gizmoY.rootComponent.relativeLocation, offset);
-          quat.copy(this.gizmoY.rootComponent.relativeRotation, rot);
-        }
+          if (localRotEuler) {
+            const localQuat = quat.create();
+            quat.fromEuler(localQuat, localRotEuler[0], localRotEuler[1], localRotEuler[2]);
+            quat.multiply(actor.rootComponent.relativeRotation, rot, localQuat);
+          } else {
+            quat.copy(actor.rootComponent.relativeRotation, rot);
+          }
+        };
 
-        if (this.gizmoZ?.rootComponent) {
-          vec3.copy(this.gizmoZ.rootComponent.relativeLocation, pos);
-          const offset = vec3.fromValues(0, 0, 2);
-          vec3.transformQuat(offset, offset, rot);
-          vec3.add(this.gizmoZ.rootComponent.relativeLocation, this.gizmoZ.rootComponent.relativeLocation, offset);
-          quat.copy(this.gizmoZ.rootComponent.relativeRotation, rot);
-        }
+        // Sync Axes
+        syncPart(this.gizmoX, vec3.fromValues(1.0, 0, 0));
+        syncPart(this.gizmoY, vec3.fromValues(0, 1.0, 0));
+        syncPart(this.gizmoZ, vec3.fromValues(0, 0, 1.0));
+
+        // Sync Arrow Heads
+        syncPart(this.arrowHeadX, vec3.fromValues(2.0, 0, 0), vec3.fromValues(0, 0, -90));
+        syncPart(this.arrowHeadY, vec3.fromValues(0, 2.0, 0)); // Points +Y already
+        syncPart(this.arrowHeadZ, vec3.fromValues(0, 0, 2.0), vec3.fromValues(90, 0, 0));
       } else {
         this.hideGizmos();
       }

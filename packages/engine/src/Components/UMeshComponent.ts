@@ -149,6 +149,75 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
+   * Generates a simple pyramid for gizmo arrow heads.
+   * Apical vertex is at (0, height, 0). Base is a square on XZ plane.
+   */
+  public createPyramid(device: GPUDevice, height: number = 1.0, radius: number = 0.5): void {
+    this.topology = 'triangle-list';
+
+    // 18 vertices (3 per face * 4 lateral faces + 3 per triangle * 2 base triangles)
+    // Structure: posX, posY, posZ, normX, normY, normZ
+    // We use unique vertices per face for Flat Shading.
+
+    const h = height;
+    const r = radius;
+
+    // Normals for lateral faces
+    // Face Front-Right: Normal points somewhere between +Z and +X
+    // For simplicity, we'll calculate them or use approximate ones. 
+    // A better way is to normalize cross product of edges.
+
+    // Front (+Z): points (0,h,0), (-r,0,r), (r,0,r)
+    // Back (-Z): points (0,h,0), (r,0,-r), (-r,0,-r)
+    // Right (+X): points (0,h,0), (r,0,r), (r,0,-r)
+    // Left (-X): points (0,h,0), (-r,0,-r), (-r,0,r)
+
+    const vertices = new Float32Array([
+      // Front Face
+      0, h, 0, 0, 0.5, 1,
+      -r, 0, r, 0, 0.5, 1,
+      r, 0, r, 0, 0.5, 1,
+
+      // Back Face
+      0, h, 0, 0, 0.5, -1,
+      r, 0, -r, 0, 0.5, -1,
+      -r, 0, -r, 0, 0.5, -1,
+
+      // Right Face
+      0, h, 0, 1, 0.5, 0,
+      r, 0, r, 1, 0.5, 0,
+      r, 0, -r, 1, 0.5, 0,
+
+      // Left Face
+      0, h, 0, -1, 0.5, 0,
+      -r, 0, -r, -1, 0.5, 0,
+      -r, 0, r, -1, 0.5, 0,
+
+      // Base (2 triangles)
+      -r, 0, -r, 0, -1, 0,
+      r, 0, -r, 0, -1, 0,
+      r, 0, r, 0, -1, 0,
+
+      -r, 0, -r, 0, -1, 0,
+      r, 0, r, 0, -1, 0,
+      -r, 0, r, 0, -1, 0,
+    ]);
+
+    this.indexCount = 0; // No index buffer for this simple one
+    this.vertexCount = vertices.length / 6;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+
+    this.material = new UMaterial();
+  }
+
+  /**
    * Cleans up GPU resources.
    */
   public override destroy(): void {
