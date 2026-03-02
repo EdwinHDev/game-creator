@@ -24,6 +24,12 @@ export class Renderer {
   private sceneUniformBuffer: GPUBuffer | null = null;
   private sceneBindGroup: GPUBindGroup | null = null;
 
+  // Shadow Mapping Resources
+  private shadowTexture: GPUTexture | null = null;
+  private shadowView: GPUTextureView | null = null;
+  private shadowSampler: GPUSampler | null = null;
+  private shadowPipeline: GPURenderPipeline | null = null;
+
   constructor() { }
 
   /**
@@ -57,7 +63,21 @@ export class Renderer {
       alphaMode: 'opaque'
     });
 
-    // Create basic shader module (Flat Shaded Triangle with Lighting)
+    // --- Phase 16: Shadow Resources ---
+    this.shadowTexture = this.device.createTexture({
+      size: [2048, 2048, 1],
+      format: 'depth32float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    this.shadowView = this.shadowTexture.createView();
+
+    this.shadowSampler = this.device.createSampler({
+      compare: 'less',
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
+
+    // Create basic shader module (Flat Shaded Triangle with Shadow Mapping)
     const shaderCode = `
       struct Uniforms {
           mvpMatrix: mat4x4<f32>,
@@ -67,14 +87,18 @@ export class Renderer {
       @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
       struct SceneUniforms {
+          lightViewProj: mat4x4<f32>,
           lightDirection: vec4<f32>,
           lightColor: vec4<f32>,
       }
-      @group(1) @binding(0) var<uniform> sceneUniforms: SceneUniforms;
+      @group(1) @binding(0) var<uniform> scene: SceneUniforms;
+      @group(1) @binding(1) var shadowMap: texture_depth_2d;
+      @group(1) @binding(2) var shadowSampler: sampler_comparison;
 
       struct VertexOut {
           @builtin(position) pos: vec4<f32>,
           @location(0) normal: vec3<f32>,
+          @location(1) fragPosLightSpace: vec4<f32>,
       }
 
       @vertex
@@ -83,24 +107,35 @@ export class Renderer {
           @location(1) normal: vec3<f32>
       ) -> VertexOut {
           var out: VertexOut;
+          let worldPos = uniforms.modelMatrix * vec4<f32>(pos, 1.0);
           out.pos = uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
-          
-          // Transform normal to world space (using 3x3 part of modelMatrix)
-          let worldNormal = normalize((uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz);
-          out.normal = worldNormal;
+          out.normal = (uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz;
+          out.fragPosLightSpace = scene.lightViewProj * worldPos;
           return out;
       }
 
       @fragment
       fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
           let N = normalize(in.normal);
-          let L = normalize(-sceneUniforms.lightDirection.xyz);
-          
-          // Lambert diffuse + basic ambient
+          let L = normalize(-scene.lightDirection.xyz);
           let diffuse = max(dot(N, L), 0.1);
-          let finalColor = uniforms.baseColor.rgb * sceneUniforms.lightColor.rgb * diffuse;
           
-          return vec4<f32>(finalColor, uniforms.baseColor.a);
+          // Shadow Calculation (Perspective divide & map to 0-1)
+          let projCoords = in.fragPosLightSpace.xyz / in.fragPosLightSpace.w;
+          let flipY = vec2<f32>(projCoords.x, -projCoords.y); 
+          let uv = flipY * 0.5 + 0.5;
+          
+          // 1. Unconditional sampling to avoid GPU control flow errors
+          var shadow = textureSampleCompare(shadowMap, shadowSampler, uv, projCoords.z - 0.005);
+          
+          // 2. Cancel shadow if coordinates are outside light projection
+          let out_of_bounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || projCoords.z > 1.0 || projCoords.z < 0.0;
+          if (out_of_bounds) {
+              shadow = 1.0; 
+          }
+
+          let lighting = (0.2 + (diffuse * shadow)) * scene.lightColor.rgb;
+          return vec4<f32>(uniforms.baseColor.rgb * lighting, uniforms.baseColor.a);
       }
     `;
 
@@ -178,9 +213,41 @@ export class Renderer {
       },
     });
 
-    // Create Global Scene Uniform Buffer (light direction + light color)
+    // --- Phase 16: Shadow Pipeline (Depth-only) ---
+    const shadowShaderCode = `
+      struct Uniforms {
+          mvpMatrix: mat4x4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+      @vertex
+      fn vs_main(@location(0) pos: vec3<f32>) -> @builtin(position) vec4<f32> {
+          return uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
+      }
+    `;
+    const shadowShaderModule = this.device.createShaderModule({ code: shadowShaderCode });
+
+    this.shadowPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: shadowShaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers,
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'back',
+      },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth32float',
+      },
+    });
+
+    // Create Global Scene Uniform Buffer (lightProjection + lightDirection + lightColor)
     this.sceneUniformBuffer = this.device.createBuffer({
-      size: 32, // 2 * vec4<f32>
+      size: 96, // mat4x4 (64) + 2 * vec4 (32)
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -193,6 +260,14 @@ export class Renderer {
           resource: {
             buffer: this.sceneUniformBuffer,
           },
+        },
+        {
+          binding: 1,
+          resource: this.shadowView!,
+        },
+        {
+          binding: 2,
+          resource: this.shadowSampler!,
         },
       ],
     });
@@ -264,7 +339,7 @@ export class Renderer {
     const vpMatrix = mat4.create();
     mat4.multiply(vpMatrix, projectionMatrix, viewMatrix);
 
-    // 3. Update Global Scene Data (Lighting)
+    // 3. Update Global Scene Data (Lighting & Shadows)
     let directionalLight: UDirectionalLightComponent | null = null;
     for (const actor of world.actors) {
       for (const component of actor.components) {
@@ -280,13 +355,90 @@ export class Renderer {
     const lightColor = directionalLight ? directionalLight.color : new Float32Array([1.0, 1.0, 1.0]);
     const lightIntensity = directionalLight ? directionalLight.intensity : 1.0;
 
-    const sceneData = new Float32Array(8);
-    sceneData.set([...lightDir, 0], 0); // direction + padding
-    sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 4); // color + padding
+    // --- Phase 16: Light Space Matrix ---
+    const lightViewMatrix = mat4.create();
+    const lightProjectionMatrix = mat4.create();
+    const lightViewProj = mat4.create();
+
+    // Orthographic projection for directional light
+    mat4.ortho(lightProjectionMatrix, -50, 50, -50, 50, 1, 500);
+
+    // View matrix looking from lightDir towards origin
+    const lightPos = vec3.create();
+    vec3.scale(lightPos, lightDir, -100); // 100 units away from origin
+    mat4.lookAt(lightViewMatrix, lightPos, [0, 0, 0], [0, 1, 0]);
+
+    mat4.multiply(lightViewProj, lightProjectionMatrix, lightViewMatrix);
+
+    const sceneData = new Float32Array(24); // 16 (mat4) + 4 (vec4) + 4 (vec4)
+    sceneData.set(lightViewProj as any, 0); // lightViewProj (offset 0)
+    sceneData.set([...lightDir, 0], 16);    // direction (offset 64)
+    sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 20); // color (offset 80)
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
-    // 4. Command Encoding
-    const commandEncoder = this.device.createCommandEncoder();
+    // 4. Shadow Pass Command Encoding
+    const shadowEncoder = this.device.createCommandEncoder();
+
+    // --- Phase 16: Shadow Pass ---
+    const shadowPassDescriptor: GPURenderPassDescriptor = {
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: this.shadowView!,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+      },
+    };
+
+    const shadowPass = shadowEncoder.beginRenderPass(shadowPassDescriptor);
+    shadowPass.setPipeline(this.shadowPipeline!);
+
+    for (const actor of world.actors) {
+      for (const component of actor.components) {
+        if (component instanceof UMeshComponent && component.vertexBuffer && component.topology === 'triangle-list') {
+          // In shadow pass, we only draw triangle meshes
+          const modelMatrix = component.getTransformMatrix();
+          const lightMVP = mat4.create();
+          mat4.multiply(lightMVP, lightViewProj, modelMatrix);
+
+          // Reuse uniform buffer logic but we need to write shadow MVP to offset 0
+          let uniformBuffer = this.uniformBuffers.get(component.id);
+          if (!uniformBuffer) {
+            uniformBuffer = this.device.createBuffer({
+              size: 144, // MVP (64) + Model (64) + Color (16)
+              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+            this.uniformBuffers.set(component.id, uniformBuffer);
+          }
+          this.device.queue.writeBuffer(uniformBuffer, 0, lightMVP as any);
+
+          // Draw for shadow (simplified)
+          let bindGroup = this.bindGroups.get(component.id + "_shadow");
+          if (!bindGroup) {
+            bindGroup = this.device.createBindGroup({
+              layout: this.shadowPipeline!.getBindGroupLayout(0),
+              entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+            });
+            this.bindGroups.set(component.id + "_shadow", bindGroup);
+          }
+
+          shadowPass.setBindGroup(0, bindGroup);
+          shadowPass.setVertexBuffer(0, component.vertexBuffer);
+          if (component.indexBuffer) {
+            shadowPass.setIndexBuffer(component.indexBuffer, 'uint16');
+            shadowPass.drawIndexed(component.indexCount);
+          } else {
+            shadowPass.draw(component.vertexCount);
+          }
+        }
+      }
+    }
+    shadowPass.end();
+
+    // Submit shadow pass so we can update buffers for main pass
+    this.device.queue.submit([shadowEncoder.finish()]);
+
+    // 5. Main Pass
     const textureView = this.context.getCurrentTexture().createView();
 
     // Create Depth Texture for this pass
@@ -313,12 +465,13 @@ export class Renderer {
       },
     };
 
-    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+    const mainEncoder = this.device.createCommandEncoder();
+    const passEncoder = mainEncoder.beginRenderPass(renderPassDescriptor);
 
     // Bind scene-wide data (Group 1)
     passEncoder.setBindGroup(1, this.sceneBindGroup!);
 
-    // 4. Iterate over meshes
+    // 6. Main Draw Loop
     for (const actor of world.actors) {
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
@@ -328,7 +481,7 @@ export class Renderer {
     }
 
     passEncoder.end();
-    this.device.queue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([mainEncoder.finish()]);
   }
 
   private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, vpMatrix: mat4): void {
