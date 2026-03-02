@@ -83,6 +83,41 @@ export class Renderer {
 
     const shaderModule = this.device.createShaderModule({ code: shaderCode });
 
+    // --- Editor Grid Shader (with fading) ---
+    const lineShaderCode = `
+      struct Uniforms {
+          mvpMatrix: mat4x4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+      struct VertexOut {
+          @builtin(position) pos: vec4<f32>,
+          @location(0) color: vec3<f32>,
+          @location(1) localPos: vec3<f32>,
+      }
+
+      @vertex
+      fn vs_main(
+          @location(0) pos: vec3<f32>,
+          @location(1) color: vec3<f32>
+      ) -> VertexOut {
+          var out: VertexOut;
+          out.pos = uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
+          out.color = color;
+          out.localPos = pos;
+          return out;
+      }
+
+      @fragment
+      fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+          let dist = length(in.localPos.xz);
+          // Fade starts at 100 units, disappears at 250 units
+          let alpha = 1.0 - smoothstep(100.0, 250.0, dist);
+          return vec4<f32>(in.color, alpha);
+      }
+    `;
+    const lineShaderModule = this.device.createShaderModule({ code: lineShaderCode });
+
     // Shared pipeline settings
     const vertexBuffers: GPUVertexBufferLayout[] = [
       {
@@ -115,21 +150,41 @@ export class Renderer {
       },
     });
 
-    // 2. Create Line Pipeline
+    // 2. Create Line Pipeline (with Blending)
     this.linePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: {
-        module: shaderModule,
+        module: lineShaderModule,
         entryPoint: 'vs_main',
         buffers: vertexBuffers,
       },
-      fragment: fragmentState,
+      fragment: {
+        module: lineShaderModule,
+        entryPoint: 'fs_main',
+        targets: [
+          {
+            format: this.format,
+            blend: {
+              color: {
+                operation: 'add',
+                srcFactor: 'src-alpha',
+                dstFactor: 'one-minus-src-alpha',
+              },
+              alpha: {
+                operation: 'add',
+                srcFactor: 'one',
+                dstFactor: 'one-minus-src-alpha',
+              },
+            },
+          }
+        ],
+      },
       primitive: {
         topology: 'line-list',
       },
     });
 
-    Logger.info("WebGPU Renderer initialized with Triangle and Line pipelines.");
+    Logger.info("WebGPU Renderer initialized with advanced Grid support.");
   }
 
   /**

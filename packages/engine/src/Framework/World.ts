@@ -34,10 +34,12 @@ export class World extends UObject {
       actor.beginPlay();
     }
 
-    Logger.info(`Actor spawned: ${name} (ID: ${actor.id})`);
+    // Notify the system that a new actor has been spawned (if it's not an editor-only actor)
+    if (!actor.isEditorOnly) {
+      EventBus.emit('OnActorSpawned', actor);
+    }
 
-    // Notify the system that a new actor has been spawned
-    EventBus.emit('OnActorSpawned', actor);
+    Logger.info(`Actor spawned: ${actor.name} (ID: ${actor.id})`);
 
     return actor;
   }

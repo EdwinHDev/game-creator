@@ -26,9 +26,10 @@ async function initEngine() {
 
     // --- Phase 12: Editor Grid ---
     const gridActor = world.spawnActor(AActor, 'EditorGrid');
+    gridActor.isEditorOnly = true;
     const gridMesh = gridActor.addComponent(UMeshComponent);
     gridActor.rootComponent = gridMesh;
-    gridMesh.createGrid(engine.getRenderer().getDevice()!, 100, 100);
+    gridMesh.createGrid(engine.getRenderer().getDevice()!, 500, 100);
     // -----------------------------
 
     // --- Phase 10: Editor Camera Controller ---

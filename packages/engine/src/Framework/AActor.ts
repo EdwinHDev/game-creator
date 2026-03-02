@@ -17,6 +17,11 @@ export class AActor extends UObject {
    */
   public components: UActorComponent[] = [];
 
+  /**
+   * If true, this actor won't be visible in the editor's Outliner.
+   */
+  public isEditorOnly: boolean = false;
+
   constructor(name: string = 'Actor') {
     super(name);
   }

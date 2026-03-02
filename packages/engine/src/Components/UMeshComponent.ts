@@ -91,7 +91,7 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a procedural grid on the XZ plane.
    */
-  public createGrid(device: GPUDevice, size: number = 100, divisions: number = 100): void {
+  public createGrid(device: GPUDevice, size: number = 500, divisions: number = 100): void {
     this.topology = 'line-list';
     this.indexBuffer = null;
     this.indexCount = 0;
@@ -99,18 +99,24 @@ export class UMeshComponent extends USceneComponent {
     const vertices: number[] = [];
     const step = size / divisions;
     const halfSize = size / 2;
-    const color = [0.3, 0.3, 0.3]; // Dark gray
+
+    const grayColor = [0.3, 0.3, 0.3];
+    const xAxisColor = [1.0, 0.2, 0.2]; // Red
+    const zAxisColor = [0.2, 0.2, 1.0]; // Blue
 
     for (let i = 0; i <= divisions; i++) {
       const linePos = -halfSize + i * step;
+      const isCenter = Math.abs(linePos) < 0.001;
 
-      // Line along X
-      vertices.push(linePos, 0, -halfSize, ...color);
-      vertices.push(linePos, 0, halfSize, ...color);
+      // Line along X (Vertical-ish)
+      const xColor = isCenter ? zAxisColor : grayColor;
+      vertices.push(linePos, 0, -halfSize, ...xColor);
+      vertices.push(linePos, 0, halfSize, ...xColor);
 
-      // Line along Z
-      vertices.push(-halfSize, 0, linePos, ...color);
-      vertices.push(halfSize, 0, linePos, ...color);
+      // Line along Z (Horizontal-ish)
+      const zColor = isCenter ? xAxisColor : grayColor;
+      vertices.push(-halfSize, 0, linePos, ...zColor);
+      vertices.push(halfSize, 0, linePos, ...zColor);
     }
 
     const vertexData = new Float32Array(vertices);
