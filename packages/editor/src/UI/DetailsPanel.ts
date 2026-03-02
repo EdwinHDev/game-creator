@@ -1,4 +1,4 @@
-import { EventBus } from '@game-creator/engine';
+import { EventBus, quat } from '@game-creator/engine';
 
 /**
  * Details Panel Web Component for inspecting and modifying actor properties.
@@ -144,16 +144,29 @@ export class DetailsPanel extends HTMLElement {
 
     grid.innerHTML = `
       <div class="input-group">
-        <label>X</label>
+        <label>Pos X</label>
         <input type="number" id="pos-x" step="0.1" value="${root.relativeLocation[0]}">
       </div>
       <div class="input-group">
-        <label>Y</label>
+        <label>Pos Y</label>
         <input type="number" id="pos-y" step="0.1" value="${root.relativeLocation[1]}">
       </div>
       <div class="input-group">
-        <label>Z</label>
+        <label>Pos Z</label>
         <input type="number" id="pos-z" step="0.1" value="${root.relativeLocation[2]}">
+      </div>
+
+      <div class="input-group">
+        <label>Rot X</label>
+        <input type="number" id="rot-x" step="1.0" value="0">
+      </div>
+      <div class="input-group">
+        <label>Rot Y</label>
+        <input type="number" id="rot-y" step="1.0" value="0">
+      </div>
+      <div class="input-group">
+        <label>Rot Z</label>
+        <input type="number" id="rot-z" step="1.0" value="0">
       </div>
     `;
 
@@ -180,6 +193,22 @@ export class DetailsPanel extends HTMLElement {
         root.relativeLocation[2] = parseFloat((e.target as HTMLInputElement).value) || 0;
       });
     }
+
+    // Rotation Binding
+    const rotX = section.querySelector('#rot-x') as HTMLInputElement;
+    const rotY = section.querySelector('#rot-y') as HTMLInputElement;
+    const rotZ = section.querySelector('#rot-z') as HTMLInputElement;
+
+    const updateRotation = () => {
+      const pitch = parseFloat(rotX.value) || 0;
+      const yaw = parseFloat(rotY.value) || 0;
+      const roll = parseFloat(rotZ.value) || 0;
+      quat.fromEuler(root.relativeRotation, pitch, yaw, roll);
+    };
+
+    if (rotX) rotX.addEventListener('input', updateRotation);
+    if (rotY) rotY.addEventListener('input', updateRotation);
+    if (rotZ) rotZ.addEventListener('input', updateRotation);
 
     // Add some quick styles for the groups
     const style = document.createElement('style');

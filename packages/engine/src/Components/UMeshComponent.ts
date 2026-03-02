@@ -1,4 +1,3 @@
-import { quat } from 'gl-matrix';
 import { USceneComponent } from '../Framework/USceneComponent';
 import { AActor } from '../Framework/AActor';
 import { UMaterial } from '../Rendering/UMaterial';
@@ -19,16 +18,10 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Constant rotation for testing purposes.
+   * Called every frame.
    */
   public override tick(deltaTime: number): void {
     super.tick(deltaTime);
-
-    // Rotate slowly over time if it's a triangle mesh (cubes, etc)
-    if (this.topology === 'triangle-list') {
-      quat.rotateY(this.relativeRotation, this.relativeRotation, deltaTime * 0.5);
-      quat.rotateX(this.relativeRotation, this.relativeRotation, deltaTime * 0.3);
-    }
   }
 
   /**
