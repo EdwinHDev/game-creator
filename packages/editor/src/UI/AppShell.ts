@@ -33,7 +33,6 @@ export class AppShell extends HTMLElement {
         <gc-resizer type="vertical" target-var="--right-width" side="right" min="150" max="500"></gc-resizer>
 
         <aside class="details">
-          <div class="panel-header">DETAILS</div>
           <gc-details-panel></gc-details-panel>
         </aside>
 

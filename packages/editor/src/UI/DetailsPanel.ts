@@ -5,12 +5,9 @@ import { EventBus } from '@game-creator/engine';
  */
 export class DetailsPanel extends HTMLElement {
   private currentActor: any = null;
-  private container: HTMLDivElement;
 
   constructor() {
     super();
-    this.container = document.createElement('div');
-    this.appendChild(this.container);
     this.setupStyles();
   }
 
@@ -24,161 +21,140 @@ export class DetailsPanel extends HTMLElement {
   }
 
   private handleActorSelected = (actor: any) => {
+    console.log('DetailsPanel received actor:', actor?.name);
     this.currentActor = actor;
     this.render();
   };
 
   private render() {
-    this.container.innerHTML = '';
+    // 1. Clear contents
+    this.innerHTML = '';
 
+    // 2. Fallback if no selection
     if (!this.currentActor) {
-      this.container.innerHTML = `<div class="empty-state">Select an object to see details</div>`;
+      const empty = document.createElement('div');
+      empty.className = 'p-4 text-muted';
+      empty.style.opacity = '0.5';
+      empty.style.fontStyle = 'italic';
+      empty.style.padding = '20px';
+      empty.textContent = 'Select an object to view details.';
+      this.appendChild(empty);
       return;
     }
 
-    const actorHeader = document.createElement('div');
-    actorHeader.className = 'actor-header';
-    actorHeader.innerHTML = `
-      <div class="actor-icon">📦</div>
-      <div class="actor-title">${this.currentActor.name}</div>
-      <div class="actor-id">${this.currentActor.id}</div>
-    `;
-    this.container.appendChild(actorHeader);
+    // 3. Header
+    const header = document.createElement('div');
+    header.style.padding = '15px';
+    header.style.borderBottom = '1px solid var(--border-color)';
+    header.style.backgroundColor = 'var(--bg-surface)';
 
-    // Transform Section
-    if (this.currentActor.rootComponent && this.currentActor.rootComponent.relativeLocation) {
-      this.renderTransformSection();
+    const title = document.createElement('h3');
+    title.textContent = this.currentActor.name;
+    title.style.margin = '0';
+    title.style.fontSize = '14px';
+    title.style.color = 'var(--accent-color)';
+    header.appendChild(title);
+    this.appendChild(header);
+
+    // 4. Transform Section (Safe Check)
+    const root = this.currentActor.rootComponent;
+    if (root && root.relativeLocation) {
+      this.renderTransformUI(root);
     }
   }
 
-  private renderTransformSection() {
+  private renderTransformUI(root: any) {
     const section = document.createElement('div');
-    section.className = 'property-section';
-    section.innerHTML = `<div class="section-title">Transform</div>`;
+    section.style.padding = '15px';
 
-    const locationRow = this.createVector3Row('Location', this.currentActor.rootComponent.relativeLocation);
-    section.appendChild(locationRow);
+    const sectionTitle = document.createElement('div');
+    sectionTitle.textContent = 'TRANSFORM';
+    sectionTitle.style.fontSize = '10px';
+    sectionTitle.style.fontWeight = 'bold';
+    sectionTitle.style.marginBottom = '10px';
+    sectionTitle.style.opacity = '0.6';
+    section.appendChild(sectionTitle);
 
-    this.container.appendChild(section);
-  }
+    const grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = '1fr 1fr 1fr';
+    grid.style.gap = '8px';
 
-  private createVector3Row(label: string, vector: Float32Array): HTMLElement {
-    const row = document.createElement('div');
-    row.className = 'vector-row';
-    row.innerHTML = `
-      <div class="vector-label">${label}</div>
-      <div class="vector-inputs">
-        <div class="input-group"><span class="axis-x">X</span><input type="number" step="0.1" value="${vector[0]}" data-axis="0"></div>
-        <div class="input-group"><span class="axis-y">Y</span><input type="number" step="0.1" value="${vector[1]}" data-axis="1"></div>
-        <div class="input-group"><span class="axis-z">Z</span><input type="number" step="0.1" value="${vector[2]}" data-axis="2"></div>
+    grid.innerHTML = `
+      <div class="input-group">
+        <label>X</label>
+        <input type="number" id="pos-x" step="0.1" value="${root.relativeLocation[0]}">
+      </div>
+      <div class="input-group">
+        <label>Y</label>
+        <input type="number" id="pos-y" step="0.1" value="${root.relativeLocation[1]}">
+      </div>
+      <div class="input-group">
+        <label>Z</label>
+        <input type="number" id="pos-z" step="0.1" value="${root.relativeLocation[2]}">
       </div>
     `;
 
-    const inputs = row.querySelectorAll('input');
-    inputs.forEach(input => {
-      input.addEventListener('input', (e) => {
-        const axis = parseInt(input.dataset.axis || '0');
-        const val = parseFloat((e.target as HTMLInputElement).value);
-        if (!isNaN(val)) {
-          vector[axis] = val;
-        }
-      });
-    });
+    section.appendChild(grid);
+    this.appendChild(section);
 
-    return row;
+    // 5. Two-Way Binding
+    const inputX = section.querySelector('#pos-x') as HTMLInputElement;
+    const inputY = section.querySelector('#pos-y') as HTMLInputElement;
+    const inputZ = section.querySelector('#pos-z') as HTMLInputElement;
+
+    if (inputX) {
+      inputX.addEventListener('input', (e) => {
+        root.relativeLocation[0] = parseFloat((e.target as HTMLInputElement).value) || 0;
+      });
+    }
+    if (inputY) {
+      inputY.addEventListener('input', (e) => {
+        root.relativeLocation[1] = parseFloat((e.target as HTMLInputElement).value) || 0;
+      });
+    }
+    if (inputZ) {
+      inputZ.addEventListener('input', (e) => {
+        root.relativeLocation[2] = parseFloat((e.target as HTMLInputElement).value) || 0;
+      });
+    }
+
+    // Add some quick styles for the groups
+    const style = document.createElement('style');
+    style.textContent = `
+      .input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .input-group label {
+        font-size: 9px;
+        font-weight: bold;
+        opacity: 0.5;
+      }
+      .input-group input {
+        background: var(--bg-base);
+        color: var(--text-main);
+        border: 1px solid var(--border-color);
+        padding: 4px;
+        border-radius: 4px;
+        font-size: 11px;
+        width: 100%;
+        outline: none;
+      }
+      .input-group input:focus {
+        border-color: var(--accent-color);
+      }
+    `;
+    this.appendChild(style);
   }
 
   private setupStyles() {
     this.style.display = 'block';
     this.style.width = '100%';
     this.style.height = '100%';
+    this.style.overflowY = 'auto';
     this.style.backgroundColor = 'var(--bg-panel)';
-    this.style.color = 'var(--text-main)';
-    this.style.fontSize = '12px';
-
-    this.innerHTML = `
-      <style>
-        .empty-state {
-          padding: 40px 20px;
-          text-align: center;
-          opacity: 0.4;
-          font-style: italic;
-        }
-        .actor-header {
-          padding: 15px;
-          background-color: var(--bg-surface);
-          border-bottom: 1px solid var(--border-color);
-          margin-bottom: 10px;
-        }
-        .actor-title {
-          font-weight: bold;
-          font-size: 14px;
-          color: var(--accent-color);
-        }
-        .actor-id {
-          font-size: 10px;
-          opacity: 0.5;
-          font-family: monospace;
-          margin-top: 4px;
-        }
-        .property-section {
-          padding: 0 15px;
-          margin-bottom: 20px;
-        }
-        .section-title {
-          font-size: 10px;
-          text-transform: uppercase;
-          font-weight: bold;
-          opacity: 0.6;
-          margin-bottom: 12px;
-          letter-spacing: 0.5px;
-        }
-        .vector-row {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-        .vector-label {
-          opacity: 0.8;
-        }
-        .vector-inputs {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 6px;
-        }
-        .input-group {
-          display: flex;
-          align-items: center;
-          background-color: var(--bg-base);
-          border-radius: 4px;
-          border: 1px solid var(--border-color);
-          overflow: hidden;
-        }
-        .input-group span {
-          width: 18px;
-          text-align: center;
-          font-weight: bold;
-          font-size: 10px;
-          padding: 4px 0;
-        }
-        .axis-x { color: #f24e1e; background: rgba(242, 78, 30, 0.1); }
-        .axis-y { color: #81e61c; background: rgba(129, 230, 28, 0.1); }
-        .axis-z { color: #2d9cdb; background: rgba(45, 156, 219, 0.1); }
-        
-        input {
-          width: 100%;
-          border: none;
-          background: transparent;
-          color: var(--text-main);
-          padding: 4px 6px;
-          font-size: 12px;
-          outline: none;
-        }
-        input:focus {
-          background-color: rgba(255, 255, 255, 0.05);
-        }
-      </style>
-    `;
   }
 }
 
