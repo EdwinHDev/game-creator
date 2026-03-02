@@ -17,6 +17,13 @@ export class UActorComponent extends UObject {
   }
 
   /**
+   * Returns true if the owner actor is currently selected.
+   */
+  public get isSelected(): boolean {
+    return this.owner.isSelected;
+  }
+
+  /**
    * Called when the game starts or when component is spawned.
    */
   public beginPlay(): void {

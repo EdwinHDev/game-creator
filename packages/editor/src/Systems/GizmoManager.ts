@@ -288,8 +288,7 @@ export class GizmoManager {
     } else if (this.isDraggingSolarHandle && this._selectedActor?.rootComponent) {
       // Phase 20.4: Drag Solar Handle Logic
       const pos = this._selectedActor.rootComponent.relativeLocation;
-      // Fixed distance for targeting
-      const distance = 10.0;
+      const distance = 3.0; // Phase 21.3: Standardized distance
       const targetPoint = vec3.create();
       vec3.scaleAndAdd(targetPoint, ray.origin, ray.direction, distance);
 
@@ -431,10 +430,13 @@ export class GizmoManager {
         if (this.currentTransformMode === 'rotate') mesh.createCircle(device, 1.1, 64, color, name.split('_')[1] as any);
         else mesh.createGizmoAxis(device, 1.0, color);
       } else {
-        if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05, color);
+        if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05);
         else if (this.currentTransformMode === 'scale') {
-          mesh.createBox(device, color);
+          mesh.createBox(device);
           vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085);
+        }
+        if (mesh.material) {
+          mesh.material.baseColor = new Float32Array([...color, 1.0]);
         }
       }
       mesh.isGizmo = true;
@@ -469,7 +471,10 @@ export class GizmoManager {
       const tipMesh = this.lightDirectionTip.addComponent(UMeshComponent);
       this.lightDirectionTip.rootComponent = tipMesh;
       // Phase 21: Use real sphere geometry
-      tipMesh.createSphere(device, 0.05, 16, 16, lightCol);
+      tipMesh.createSphere(device, 0.05, 16, 16);
+      if (tipMesh.material) {
+        tipMesh.material.baseColor = new Float32Array([...lightCol, 1.0]);
+      }
       // Perfect scale for the sphere tip (Shrunk to 0.025 for elegance)
       vec3.set(tipMesh.relativeScale, 0.025, 0.025, 0.025);
       tipMesh.isGizmo = true;

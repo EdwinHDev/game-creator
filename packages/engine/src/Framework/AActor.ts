@@ -22,6 +22,11 @@ export class AActor extends UObject {
    */
   public isEditorOnly: boolean = false;
 
+  /**
+   * If true, this actor is currently selected in the editor.
+   */
+  public isSelected: boolean = false;
+
   constructor(name: string = 'Actor') {
     super(name);
   }

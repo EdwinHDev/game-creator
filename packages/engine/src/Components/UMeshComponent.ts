@@ -28,49 +28,48 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a simple 3D box and creates GPU buffers for it.
    */
-  public createBox(device: GPUDevice, color: number[] = [1, 1, 1]): void {
+  public createBox(device: GPUDevice): void {
     this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
 
-    const [r, g, b] = color;
     // 24 vertices (4 per face)
-    // Structure: posX, posY, posZ, colR, colG, colB
+    // Structure: posX, posY, posZ, normX, normY, normZ
     const vertices = new Float32Array([
-      // Front face
-      -1, -1, 1, r, g, b,
-      1, -1, 1, r, g, b,
-      1, 1, 1, r, g, b,
-      -1, 1, 1, r, g, b,
+      // Front face (Z+)
+      -1, -1, 1, 0, 0, 1,
+      1, -1, 1, 0, 0, 1,
+      1, 1, 1, 0, 0, 1,
+      -1, 1, 1, 0, 0, 1,
 
-      // Back face
-      -1, -1, -1, r, g, b,
-      -1, 1, -1, r, g, b,
-      1, 1, -1, r, g, b,
-      1, -1, -1, r, g, b,
+      // Back face (Z-)
+      -1, -1, -1, 0, 0, -1,
+      -1, 1, -1, 0, 0, -1,
+      1, 1, -1, 0, 0, -1,
+      1, -1, -1, 0, 0, -1,
 
-      // Top face
-      -1, 1, -1, r, g, b,
-      -1, 1, 1, r, g, b,
-      1, 1, 1, r, g, b,
-      1, 1, -1, r, g, b,
+      // Top face (Y+)
+      -1, 1, -1, 0, 1, 0,
+      -1, 1, 1, 0, 1, 0,
+      1, 1, 1, 0, 1, 0,
+      1, 1, -1, 0, 1, 0,
 
-      // Bottom face
-      -1, -1, -1, r, g, b,
-      1, -1, -1, r, g, b,
-      1, -1, 1, r, g, b,
-      -1, -1, 1, r, g, b,
+      // Bottom face (Y-)
+      -1, -1, -1, 0, -1, 0,
+      1, -1, -1, 0, -1, 0,
+      1, -1, 1, 0, -1, 0,
+      -1, -1, 1, 0, -1, 0,
 
-      // Right face
-      1, -1, -1, r, g, b,
-      1, 1, -1, r, g, b,
-      1, 1, 1, r, g, b,
-      1, -1, 1, r, g, b,
+      // Right face (X+)
+      1, -1, -1, 1, 0, 0,
+      1, 1, -1, 1, 0, 0,
+      1, 1, 1, 1, 0, 0,
+      1, -1, 1, 1, 0, 0,
 
-      // Left face
-      -1, -1, -1, r, g, b,
-      -1, -1, 1, r, g, b,
-      -1, 1, 1, r, g, b,
-      -1, 1, -1, r, g, b,
+      // Left face (X-)
+      -1, -1, -1, -1, 0, 0,
+      -1, -1, 1, -1, 0, 0,
+      -1, 1, 1, -1, 0, 0,
+      -1, 1, -1, -1, 0, 0,
     ]);
 
     // 36 indices (6 faces * 2 triangles * 3 vertices)
@@ -154,43 +153,52 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a solid pyramid for gizmo arrow heads.
    */
-  public createPyramid(device: GPUDevice, height: number = 0.15, radius: number = 0.05, color: number[] = [1, 1, 1]): void {
+  public createPyramid(device: GPUDevice, height: number = 0.15, radius: number = 0.05): void {
     this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
 
     const h = height;
     const r = radius;
-    const [cr, cg, cb] = color;
 
-    // 18 vertices
+    // Helper to normalize
+    const norm = (x: number, y: number, z: number): number[] => {
+      const len = Math.sqrt(x * x + y * y + z * z);
+      return [x / len, y / len, z / len];
+    };
+
+    const nf = norm(0, r, h); // Normal Front
+    const nb = norm(0, r, -h); // Normal Back
+    const nr = norm(h, r, 0); // Normal Right
+    const nl = norm(-h, r, 0); // Normal Left
+
     const vertices = new Float32Array([
       // Front Face
-      0, h, 0, cr, cg, cb,
-      -r, 0, r, cr, cg, cb,
-      r, 0, r, cr, cg, cb,
+      0, h, 0, ...nf,
+      -r, 0, r, ...nf,
+      r, 0, r, ...nf,
 
       // Back Face
-      0, h, 0, cr, cg, cb,
-      r, 0, -r, cr, cg, cb,
-      -r, 0, -r, cr, cg, cb,
+      0, h, 0, ...nb,
+      r, 0, -r, ...nb,
+      -r, 0, -r, ...nb,
 
       // Right Face
-      0, h, 0, cr, cg, cb,
-      r, 0, r, cr, cg, cb,
-      r, 0, -r, cr, cg, cb,
+      0, h, 0, ...nr,
+      r, 0, r, ...nr,
+      r, 0, -r, ...nr,
 
       // Left Face
-      0, h, 0, cr, cg, cb,
-      -r, 0, -r, cr, cg, cb,
-      -r, 0, r, cr, cg, cb,
+      0, h, 0, ...nl,
+      -r, 0, -r, ...nl,
+      -r, 0, r, ...nl,
 
       // Base
-      -r, 0, -r, cr, cg, cb,
-      r, 0, -r, cr, cg, cb,
-      r, 0, r, cr, cg, cb,
-      -r, 0, -r, cr, cg, cb,
-      r, 0, r, cr, cg, cb,
-      -r, 0, r, cr, cg, cb,
+      -r, 0, -r, 0, -1, 0,
+      r, 0, -r, 0, -1, 0,
+      r, 0, r, 0, -1, 0,
+      -r, 0, -r, 0, -1, 0,
+      r, 0, r, 0, -1, 0,
+      -r, 0, r, 0, -1, 0,
     ]);
 
     this.vertexCount = 18;
@@ -430,12 +438,11 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a smooth UV sphere.
    */
-  public createSphere(device: GPUDevice, radius: number = 1.0, latSegments: number = 16, lonSegments: number = 32, color: number[] = [1, 1, 1]): void {
+  public createSphere(device: GPUDevice, radius: number = 1.0, latSegments: number = 16, lonSegments: number = 32): void {
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.topology = 'triangle-list';
 
-    const [r, g, b] = color;
     const vertices: number[] = [];
     const indices: number[] = [];
 
@@ -449,14 +456,18 @@ export class UMeshComponent extends USceneComponent {
         const sinPhi = Math.sin(phi);
         const cosPhi = Math.cos(phi);
 
-        const x = cosPhi * sinTheta;
-        const y = cosTheta;
-        const z = sinPhi * sinTheta;
+        const nx = cosPhi * sinTheta;
+        const ny = cosTheta;
+        const nz = sinPhi * sinTheta;
+
+        const x = nx * radius;
+        const y = ny * radius;
+        const z = nz * radius;
 
         // Position
-        vertices.push(x * radius, y * radius, z * radius);
-        // Color
-        vertices.push(r, g, b);
+        vertices.push(x, y, z);
+        // Normal (UV sphere normals are the unit direction from center)
+        vertices.push(nx, ny, nz);
       }
     }
 
