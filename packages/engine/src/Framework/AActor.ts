@@ -52,4 +52,15 @@ export class AActor extends UObject {
       component.tick(deltaTime);
     }
   }
+
+  /**
+   * Destroys the actor and all its components.
+   */
+  public destroy(): void {
+    for (const component of this.components) {
+      component.destroy();
+    }
+    this.components = [];
+    this.rootComponent = null;
+  }
 }

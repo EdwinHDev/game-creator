@@ -80,4 +80,21 @@ export class UMeshComponent extends USceneComponent {
     new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
     this.indexBuffer.unmap();
   }
+
+  /**
+   * Cleans up GPU resources.
+   */
+  public override destroy(): void {
+    super.destroy();
+
+    if (this.vertexBuffer) {
+      this.vertexBuffer.destroy();
+      this.vertexBuffer = null;
+    }
+
+    if (this.indexBuffer) {
+      this.indexBuffer.destroy();
+      this.indexBuffer = null;
+    }
+  }
 }

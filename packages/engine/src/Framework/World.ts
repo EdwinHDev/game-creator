@@ -53,6 +53,9 @@ export class World extends UObject {
       // Notify the system that the actor has been destroyed
       EventBus.emit('OnActorDestroyed', actor);
 
+      // Clean up actor resources
+      actor.destroy();
+
       Logger.info(`Actor destroyed: ${actor.name} (ID: ${actor.id})`);
     }
   }

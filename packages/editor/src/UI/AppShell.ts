@@ -1,14 +1,36 @@
-
+import { EventBus } from '@game-creator/engine';
 import './Resizer';
 import './Viewport';
+import './TopBar';
 
 export class AppShell extends HTMLElement {
+  private selectedActor: any = null;
+
   constructor() {
     super();
   }
 
   connectedCallback() {
     this.render();
+
+    // Track selection for global actions (like Delete)
+    EventBus.on('OnActorSelected', (actor: any) => {
+      this.selectedActor = actor;
+    });
+
+    // Global keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Delete' && this.selectedActor) {
+        if (this.selectedActor.name !== 'MainCamera') {
+          // Get engine instance from the window or a global place if needed
+          // For now, we'll assume the engine's world is accessible via the actor
+          // (Actors in our engine don't have a direct reference to World, 
+          // but we can emit a request or use a global)
+          EventBus.emit('RequestActorDestruction', this.selectedActor);
+          this.selectedActor = null;
+        }
+      }
+    });
   }
 
   private render() {
@@ -17,6 +39,7 @@ export class AppShell extends HTMLElement {
         <header class="top-bar">
           <div class="logo">GAME CREATOR</div>
           <div class="menu">File | Edit | View | Help</div>
+          <gc-topbar id="main-topbar"></gc-topbar>
         </header>
 
         <aside class="outliner">

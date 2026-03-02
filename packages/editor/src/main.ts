@@ -3,7 +3,8 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UMeshComponent, vec3 } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, vec3, EventBus } from '@game-creator/engine';
+import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
 
@@ -23,16 +24,22 @@ async function initEngine() {
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 0, 5); // Pull back to see the center
 
-    // 2. Setup Test Cube
-    const cubeActor = world.spawnActor(AActor, 'TestCube');
-    const mesh = cubeActor.addComponent(UMeshComponent);
-    cubeActor.rootComponent = mesh;
-    mesh.createBox(engine.getRenderer().getDevice()!);
-    // ---------------------------------
-
     // --- Phase 10: Editor Camera Controller ---
     new EditorCameraController(canvas, cameraActor);
     // -------------------------------------------
+
+    // --- Phase 11: TopBar Integration ---
+    const topbar = document.querySelector('gc-topbar') as any;
+    if (topbar) {
+      topbar.engine = engine;
+      topbar.render(); // Re-render now that it has the engine
+    }
+
+    // Handle actor destruction requests from UI
+    EventBus.on('RequestActorDestruction', (actor: any) => {
+      world.destroyActor(actor);
+    });
+    // ------------------------------------
 
     engine.start();
   }

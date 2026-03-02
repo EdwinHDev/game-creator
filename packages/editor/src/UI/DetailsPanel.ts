@@ -13,17 +13,26 @@ export class DetailsPanel extends HTMLElement {
 
   connectedCallback() {
     EventBus.on('OnActorSelected', this.handleActorSelected);
+    EventBus.on('OnActorDestroyed', this.handleActorDestroyed);
     this.render();
   }
 
   disconnectedCallback() {
     EventBus.off('OnActorSelected', this.handleActorSelected);
+    EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
   }
 
   private handleActorSelected = (actor: any) => {
     console.log('DetailsPanel received actor:', actor?.name);
     this.currentActor = actor;
     this.render();
+  };
+
+  private handleActorDestroyed = (actor: any) => {
+    if (this.currentActor && this.currentActor.id === actor.id) {
+      this.currentActor = null;
+      this.render();
+    }
   };
 
   private render() {
