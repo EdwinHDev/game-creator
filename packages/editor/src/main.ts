@@ -1,5 +1,6 @@
 import './styles/tokens.css';
 import './UI/AppShell';
+import './UI/Outliner';
 import { Engine, AActor, UCameraComponent, UMeshComponent, vec3 } from '@game-creator/engine';
 
 console.log('Game Creator Editor Initialized');

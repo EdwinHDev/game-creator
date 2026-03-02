@@ -21,7 +21,7 @@ export class AppShell extends HTMLElement {
 
         <aside class="outliner">
           <div class="panel-header">OUTLINER</div>
-          <div class="panel-content">Scene Root</div>
+          <gc-outliner></gc-outliner>
         </aside>
 
         <gc-resizer type="vertical" target-var="--left-width" side="left" min="150" max="500"></gc-resizer>

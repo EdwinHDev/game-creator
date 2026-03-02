@@ -1,6 +1,7 @@
 import { UObject } from '../Core/UObject';
 import { AActor } from './AActor';
 import { Logger } from '../Core/Logger';
+import { EventBus } from '../Core/EventBus';
 
 /**
  * Manages the collection of actors and the game state.
@@ -34,7 +35,26 @@ export class World extends UObject {
     }
 
     Logger.info(`Actor spawned: ${name} (ID: ${actor.id})`);
+
+    // Notify the system that a new actor has been spawned
+    EventBus.emit('OnActorSpawned', actor);
+
     return actor;
+  }
+
+  /**
+   * Removes an actor from the world and notifies the system.
+   */
+  public destroyActor(actor: AActor): void {
+    const index = this.actors.indexOf(actor);
+    if (index !== -1) {
+      this.actors.splice(index, 1);
+
+      // Notify the system that the actor has been destroyed
+      EventBus.emit('OnActorDestroyed', actor);
+
+      Logger.info(`Actor destroyed: ${actor.name} (ID: ${actor.id})`);
+    }
   }
 
   /**
