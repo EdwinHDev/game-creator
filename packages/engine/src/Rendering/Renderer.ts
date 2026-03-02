@@ -15,6 +15,7 @@ export class Renderer {
 
   private trianglePipeline: GPURenderPipeline | null = null;
   private linePipeline: GPURenderPipeline | null = null;
+  private outlinePipeline: GPURenderPipeline | null = null;
 
   // Cache for uniform buffers to avoid re-allocation every frame
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -178,6 +179,37 @@ export class Renderer {
     `;
     const lineShaderModule = this.device.createShaderModule({ code: lineShaderCode });
 
+    // --- Phase 18: Outline Shader (Inverted Hull) ---
+    const outlineShaderCode = `
+      struct Uniforms {
+          mvpMatrix: mat4x4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+      struct VertexOut {
+          @builtin(position) pos: vec4<f32>,
+      }
+
+      @vertex
+      fn vs_main(
+          @location(0) pos: vec3<f32>,
+          @location(1) normal: vec3<f32>
+      ) -> VertexOut {
+          var out: VertexOut;
+          // Extrude along normal for the outline effect
+          let thickness = 0.03;
+          let pushedPos = pos + normalize(normal) * thickness;
+          out.pos = uniforms.mvpMatrix * vec4<f32>(pushedPos, 1.0);
+          return out;
+      }
+
+      @fragment
+      fn fs_main() -> @location(0) vec4<f32> {
+          return vec4<f32>(1.0, 0.6, 0.0, 1.0); // Orange
+      }
+    `;
+    const outlineShaderModule = this.device.createShaderModule({ code: outlineShaderCode });
+
     // Shared pipeline settings
     const vertexBuffers: GPUVertexBufferLayout[] = [
       {
@@ -313,7 +345,31 @@ export class Renderer {
       },
     });
 
-    Logger.info("WebGPU Renderer initialized with advanced Grid support.");
+    // 3. Create Outline Pipeline
+    this.outlinePipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: outlineShaderModule,
+        entryPoint: 'vs_main',
+        buffers: vertexBuffers,
+      },
+      fragment: {
+        module: outlineShaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+        cullMode: 'front', // Inverted Hull: cull front faces
+      },
+      depthStencil: {
+        depthWriteEnabled: true,
+        depthCompare: 'less',
+        format: 'depth24plus',
+      },
+    });
+
+    Logger.info("WebGPU Renderer initialized with Selection Outlines support.");
   }
 
   /**
@@ -476,8 +532,15 @@ export class Renderer {
 
     // 6. Main Draw Loop
     for (const actor of world.actors) {
+      const isSelected = actor.id === world.selectedActorId;
+
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
+          // If selected, draw outline FIRST (or second, depending on depth settings, 
+          // but inverted hull usually works well if drawn after or with depth testing)
+          if (isSelected && component.topology === 'triangle-list') {
+            this.drawOutline(passEncoder, component, viewProjMatrix);
+          }
           this.drawMesh(passEncoder, component, viewProjMatrix);
         }
       }
@@ -485,6 +548,47 @@ export class Renderer {
 
     passEncoder.end();
     this.device.queue.submit([mainEncoder.finish()]);
+  }
+
+  private drawOutline(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, viewProjMatrix: mat4): void {
+    if (!this.device || !this.outlinePipeline) return;
+
+    passEncoder.setPipeline(this.outlinePipeline);
+
+    const modelMatrix = mesh.getTransformMatrix();
+    const mvpMatrix = mat4.create();
+    mat4.multiply(mvpMatrix, viewProjMatrix, modelMatrix);
+
+    // Outline uses a simplified MVP-only uniform buffer (64 bytes)
+    // We can reuse the "meshId_outline" bucket
+    let uniformBuffer = this.uniformBuffers.get(mesh.id + "_outline");
+    if (!uniformBuffer) {
+      uniformBuffer = this.device.createBuffer({
+        size: 64,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      this.uniformBuffers.set(mesh.id + "_outline", uniformBuffer);
+    }
+
+    this.device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix as any);
+
+    let bindGroup = this.bindGroups.get(mesh.id + "_outline");
+    if (!bindGroup) {
+      bindGroup = this.device.createBindGroup({
+        layout: this.outlinePipeline.getBindGroupLayout(0),
+        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+      });
+      this.bindGroups.set(mesh.id + "_outline", bindGroup);
+    }
+
+    passEncoder.setBindGroup(0, bindGroup);
+    passEncoder.setVertexBuffer(0, mesh.vertexBuffer);
+    if (mesh.indexBuffer) {
+      passEncoder.setIndexBuffer(mesh.indexBuffer, 'uint16');
+      passEncoder.drawIndexed(mesh.indexCount);
+    } else {
+      passEncoder.draw(mesh.vertexCount);
+    }
   }
 
   private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, viewProjMatrix: mat4): void {

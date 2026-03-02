@@ -12,6 +12,11 @@ export class World extends UObject {
    */
   public actors: AActor[] = [];
 
+  /**
+   * The ID of the currently selected actor (for editor selection).
+   */
+  public selectedActorId: string | null = null;
+
   private isBegunPlay: boolean = false;
 
   constructor(name: string = 'World') {

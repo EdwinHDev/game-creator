@@ -246,6 +246,11 @@ export class Viewport extends HTMLElement {
   private handleActorSelected = (actor: AActor | null) => {
     this.selectedActor = actor;
 
+    // Pass selection to the engine for rendering outlines
+    if (this._world) {
+      this._world.selectedActorId = actor ? actor.id : null;
+    }
+
     if (!actor || actor.isEditorOnly || this.currentTransformMode !== 'translate') {
       this.hideGizmos();
     }
