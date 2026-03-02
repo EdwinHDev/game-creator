@@ -22,14 +22,14 @@ async function initEngine() {
     const cameraActor = world.spawnActor(AActor, 'MainCamera');
     const camera = cameraActor.addComponent(UCameraComponent);
     cameraActor.rootComponent = camera;
-    vec3.set(camera.relativeLocation, 0, 5, 10); // Elevated perspective
+    vec3.set(camera.relativeLocation, 0, 4, 12); // Refined isometric perspective
 
     // --- Phase 12: Editor Grid ---
     const gridActor = world.spawnActor(AActor, 'EditorGrid');
     gridActor.isEditorOnly = true;
     const gridMesh = gridActor.addComponent(UMeshComponent);
     gridActor.rootComponent = gridMesh;
-    gridMesh.createGrid(engine.getRenderer().getDevice()!, 500, 100);
+    gridMesh.createGrid(engine.getRenderer().getDevice()!);
     // -----------------------------
 
     // --- Phase 10: Editor Camera Controller ---

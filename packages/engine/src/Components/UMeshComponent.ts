@@ -91,7 +91,7 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a procedural grid on the XZ plane.
    */
-  public createGrid(device: GPUDevice, size: number = 500, divisions: number = 100): void {
+  public createGrid(device: GPUDevice, size: number = 200, divisions: number = 200): void {
     this.topology = 'line-list';
     this.indexBuffer = null;
     this.indexCount = 0;

@@ -111,8 +111,8 @@ export class Renderer {
       @fragment
       fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
           let dist = length(in.localPos.xz);
-          // Fade starts at 100 units, disappears at 250 units
-          let alpha = 1.0 - smoothstep(100.0, 250.0, dist);
+          // Fade starts at 40 units, disappears at 100 units
+          let alpha = 1.0 - smoothstep(40.0, 100.0, dist);
           return vec4<f32>(in.color, alpha);
       }
     `;
