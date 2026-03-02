@@ -2,6 +2,7 @@ import './styles/tokens.css';
 import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
+import { EditorCameraController } from './UI/EditorCameraController';
 import { Engine, AActor, UCameraComponent, UMeshComponent, vec3 } from '@game-creator/engine';
 
 console.log('Game Creator Editor Initialized');
@@ -28,6 +29,10 @@ async function initEngine() {
     cubeActor.rootComponent = mesh;
     mesh.createBox(engine.getRenderer().getDevice()!);
     // ---------------------------------
+
+    // --- Phase 10: Editor Camera Controller ---
+    new EditorCameraController(canvas, cameraActor);
+    // -------------------------------------------
 
     engine.start();
   }
