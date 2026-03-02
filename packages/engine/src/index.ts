@@ -1,5 +1,6 @@
 export { vec3, mat4, quat } from 'gl-matrix';
 export * from './Core/Logger';
+export * from './Math/Raycaster';
 export * from './Core/Errors';
 export * from './Core/EventBus';
 export * from './Core/UObject';

@@ -30,6 +30,8 @@ export class Renderer {
   private shadowSampler: GPUSampler | null = null;
   private shadowPipeline: GPURenderPipeline | null = null;
 
+  public viewProjMatrix: mat4 = mat4.create();
+
   constructor() { }
 
   /**
@@ -336,8 +338,9 @@ export class Renderer {
     const viewMatrix = mainCamera.getViewMatrix();
     const projectionMatrix = mainCamera.getProjectionMatrix(aspectRatio);
 
-    const vpMatrix = mat4.create();
-    mat4.multiply(vpMatrix, projectionMatrix, viewMatrix);
+    const viewProjMatrix = mat4.create();
+    mat4.multiply(viewProjMatrix, projectionMatrix, viewMatrix);
+    mat4.copy(this.viewProjMatrix, viewProjMatrix);
 
     // 3. Update Global Scene Data (Lighting & Shadows)
     let directionalLight: UDirectionalLightComponent | null = null;
@@ -475,7 +478,7 @@ export class Renderer {
     for (const actor of world.actors) {
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
-          this.drawMesh(passEncoder, component, vpMatrix);
+          this.drawMesh(passEncoder, component, viewProjMatrix);
         }
       }
     }
@@ -484,7 +487,7 @@ export class Renderer {
     this.device.queue.submit([mainEncoder.finish()]);
   }
 
-  private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, vpMatrix: mat4): void {
+  private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, viewProjMatrix: mat4): void {
     if (!this.device) return;
 
     // Select the correct pipeline for this mesh
@@ -498,7 +501,7 @@ export class Renderer {
 
     // 2. Calculate MVP
     const mvpMatrix = mat4.create();
-    mat4.multiply(mvpMatrix, vpMatrix, modelMatrix);
+    mat4.multiply(mvpMatrix, viewProjMatrix, mesh.getTransformMatrix());
 
     // 3. Update or Create Uniform Buffer
     const isLineList = mesh.topology === 'line-list';
