@@ -9,3 +9,6 @@ export * from './Framework/UActorComponent';
 export * from './Framework/USceneComponent';
 export * from './Framework/AActor';
 export * from './Framework/World';
+
+export * from './Components/UCameraComponent';
+export * from './Components/UMeshComponent';
