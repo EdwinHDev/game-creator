@@ -19,14 +19,13 @@ async function initEngine() {
     const world = engine.getWorld();
 
     // 1. Setup Camera
-    const cameraActor = world.spawnActor(AActor, 'MainCamera');
+    const cameraActor = world.spawnActor(AActor, 'MainCamera', true);
     const camera = cameraActor.addComponent(UCameraComponent);
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 4, 12); // Standard isometric perspective (Phase 13.1)
 
     // --- Phase 12-13: Editor Grid ---
-    const gridActor = world.spawnActor(AActor, 'EditorGrid');
-    gridActor.isEditorOnly = true;
+    const gridActor = world.spawnActor(AActor, 'EditorGrid', true);
     const gridMesh = gridActor.addComponent(UMeshComponent);
     gridActor.rootComponent = gridMesh;
     gridMesh.createGrid(engine.getRenderer().getDevice()!);

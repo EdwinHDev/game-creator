@@ -22,12 +22,15 @@ export class World extends UObject {
    * Spawns a new actor into the world.
    * @param actorClass The class of the actor to spawn.
    * @param name The name of the new actor.
+   * @param isEditorOnly Whether this actor is for the editor only.
    */
   public spawnActor<T extends AActor>(
     actorClass: new (name: string) => T,
-    name: string = 'Actor'
+    name: string = 'Actor',
+    isEditorOnly: boolean = false
   ): T {
     const actor = new actorClass(name);
+    actor.isEditorOnly = isEditorOnly;
     this.actors.push(actor);
 
     if (this.isBegunPlay) {
