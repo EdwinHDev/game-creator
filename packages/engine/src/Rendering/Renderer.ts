@@ -340,20 +340,14 @@ export class Renderer {
 
     passEncoder.setPipeline(pipeline);
 
-    // Calculate Model matrix
-    const modelMatrix = mat4.create();
-    mat4.fromRotationTranslationScale(
-      modelMatrix,
-      mesh.relativeRotation,
-      mesh.relativeLocation,
-      mesh.relativeScale
-    );
+    // 1. Get real Model matrix from component (centralized logic)
+    const modelMatrix = mesh.getTransformMatrix();
 
-    // Calculate MVP
+    // 2. Calculate MVP
     const mvpMatrix = mat4.create();
     mat4.multiply(mvpMatrix, vpMatrix, modelMatrix);
 
-    // Update or Create Uniform Buffer
+    // 3. Update or Create Uniform Buffer
     const isLineList = mesh.topology === 'line-list';
     const bufferSize = isLineList ? 64 : 144; // MVP (64) + Model (64) + Color (16)
 
@@ -366,9 +360,10 @@ export class Renderer {
       this.uniformBuffers.set(mesh.id, uniformBuffer);
     }
 
-    this.device.queue.writeBuffer(uniformBuffer, 0, vpMatrix as any);
+    // 4. Populate Buffer
+    this.device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix as any);
 
-    // Write Model Matrix and Color for triangle meshes
+    // Write Model Matrix and Color for triangle meshes (Lighting needs world space)
     if (!isLineList) {
       this.device.queue.writeBuffer(uniformBuffer, 64, modelMatrix as any);
       const color = mesh.material ? mesh.material.baseColor : new Float32Array([1, 1, 1, 1]);

@@ -1,4 +1,4 @@
-import { vec3, quat } from 'gl-matrix';
+import { vec3, quat, mat4 } from 'gl-matrix';
 import { UActorComponent } from './UActorComponent';
 import { AActor } from './AActor';
 
@@ -47,5 +47,19 @@ export class USceneComponent extends UActorComponent {
     if (this.parent) {
       this.parent.children.push(this);
     }
+  }
+
+  /**
+   * Calculates and returns the local transformation matrix of this component.
+   */
+  public getTransformMatrix(): mat4 {
+    const matrix = mat4.create();
+    mat4.fromRotationTranslationScale(
+      matrix,
+      this.relativeRotation,
+      this.relativeLocation,
+      this.relativeScale
+    );
+    return matrix;
   }
 }
