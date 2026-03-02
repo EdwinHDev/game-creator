@@ -34,7 +34,7 @@ export class AppShell extends HTMLElement {
 
         <aside class="details">
           <div class="panel-header">DETAILS</div>
-          <div class="panel-content">Selected Object Properties</div>
+          <gc-details-panel></gc-details-panel>
         </aside>
 
         <!-- Horizontal Resizer in its own row -->
