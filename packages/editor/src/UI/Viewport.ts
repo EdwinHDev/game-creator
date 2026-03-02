@@ -1,4 +1,4 @@
-import { EventBus } from '@game-creator/engine';
+import { EventBus, AActor, UDirectionalLightComponent, quat, World } from '@game-creator/engine';
 
 /**
  * Viewport Web Component that hosts the 3D Engine Canvas.
@@ -7,6 +7,7 @@ import { EventBus } from '@game-creator/engine';
 export class Viewport extends HTMLElement {
   private canvas: HTMLCanvasElement;
   private resizeObserver: ResizeObserver;
+  private _world: World | null = null;
 
   constructor() {
     super();
@@ -20,6 +21,28 @@ export class Viewport extends HTMLElement {
         }
       }
     });
+  }
+
+  /**
+   * Sets the world and initializes editor-only actors like the sun.
+   */
+  set world(value: World) {
+    this._world = value;
+    this.spawnSun();
+  }
+
+  private spawnSun() {
+    if (!this._world) return;
+
+    // --- Phase 15: Directional Light ---
+    const lightActor = this._world.spawnActor(AActor, 'DirectionalLight', false);
+    const sun = lightActor.addComponent(UDirectionalLightComponent);
+    lightActor.rootComponent = sun;
+
+    sun.intensity = 1.2;
+    // Rotate 45 degrees pitch (X axis) and 45 degrees yaw (Y axis)
+    quat.fromEuler(sun.relativeRotation, -45, -45, 0);
+    // ------------------------------------
   }
 
   connectedCallback() {

@@ -17,6 +17,7 @@ async function initEngine() {
 
     // --- Phase 7: Test Scene Setup ---
     const world = engine.getWorld();
+    viewport.world = world; // Triggers sunlight spawning (Phase 15 Redo)
 
     // 1. Setup Camera
     const cameraActor = world.spawnActor(AActor, 'MainCamera', true);

@@ -37,39 +37,58 @@ export class UMeshComponent extends USceneComponent {
   public createBox(device: GPUDevice): void {
     this.topology = 'triangle-list';
 
-    // 8 vertices for a cube (pos: vec3, color: vec3)
+    // 24 vertices (4 per face) for unique normals (Flat Shading)
+    // Structure: posX, posY, posZ, normX, normY, normZ
     const vertices = new Float32Array([
-      // Front face
-      -1, -1, 1, 1, 0, 0, // 0: Red
-      1, -1, 1, 0, 1, 0, // 1: Green
-      1, 1, 1, 0, 0, 1, // 2: Blue
-      -1, 1, 1, 1, 1, 1, // 3: White
+      // Front face (Normal: 0, 0, 1)
+      -1, -1, 1, 0, 0, 1,
+      1, -1, 1, 0, 0, 1,
+      1, 1, 1, 0, 0, 1,
+      -1, 1, 1, 0, 0, 1,
 
-      // Back face
-      -1, -1, -1, 1, 1, 0, // 4: Yellow
-      1, -1, -1, 0, 1, 1, // 5: Cyan
-      1, 1, -1, 1, 0, 1, // 6: Magenta
-      -1, 1, -1, 0, 0, 0, // 7: Black
+      // Back face (Normal: 0, 0, -1)
+      -1, -1, -1, 0, 0, -1,
+      -1, 1, -1, 0, 0, -1,
+      1, 1, -1, 0, 0, -1,
+      1, -1, -1, 0, 0, -1,
+
+      // Top face (Normal: 0, 1, 0)
+      -1, 1, -1, 0, 1, 0,
+      -1, 1, 1, 0, 1, 0,
+      1, 1, 1, 0, 1, 0,
+      1, 1, -1, 0, 1, 0,
+
+      // Bottom face (Normal: 0, -1, 0)
+      -1, -1, -1, 0, -1, 0,
+      1, -1, -1, 0, -1, 0,
+      1, -1, 1, 0, -1, 0,
+      -1, -1, 1, 0, -1, 0,
+
+      // Right face (Normal: 1, 0, 0)
+      1, -1, -1, 1, 0, 0,
+      1, 1, -1, 1, 0, 0,
+      1, 1, 1, 1, 0, 0,
+      1, -1, 1, 1, 0, 0,
+
+      // Left face (Normal: -1, 0, 0)
+      -1, -1, -1, -1, 0, 0,
+      -1, -1, 1, -1, 0, 0,
+      -1, 1, 1, -1, 0, 0,
+      -1, 1, -1, -1, 0, 0,
     ]);
 
     // 36 indices (6 faces * 2 triangles * 3 vertices)
     const indices = new Uint16Array([
-      // Front
-      0, 1, 2, 0, 2, 3,
-      // Back
-      4, 6, 5, 4, 7, 6,
-      // Top
-      3, 2, 6, 3, 6, 7,
-      // Bottom
-      4, 5, 1, 4, 1, 0,
-      // Right
-      1, 5, 6, 1, 6, 2,
-      // Left
-      4, 0, 3, 4, 3, 7,
+      0, 1, 2, 0, 2, 3,       // Front
+      4, 5, 6, 4, 6, 7,       // Back
+      8, 9, 10, 8, 10, 11,    // Top
+      12, 13, 14, 12, 14, 15, // Bottom
+      16, 17, 18, 16, 18, 19, // Right
+      20, 21, 22, 20, 22, 23  // Left
     ]);
 
     this.indexCount = indices.length;
-    this.vertexCount = 8;
+    this.vertexCount = 24;
 
     // Create Vertex Buffer
     this.vertexBuffer = device.createBuffer({
