@@ -1,4 +1,4 @@
-import { EventBus, AActor, UDirectionalLightComponent, quat, World } from '@game-creator/engine';
+import { EventBus, AActor, UDirectionalLightComponent, UGizmoComponent, quat, vec3, World, Engine } from '@game-creator/engine';
 
 /**
  * Viewport Web Component that hosts the 3D Engine Canvas.
@@ -8,6 +8,8 @@ export class Viewport extends HTMLElement {
   private canvas: HTMLCanvasElement;
   private resizeObserver: ResizeObserver;
   private _world: World | null = null;
+  private gizmoActor: AActor | null = null;
+  private selectedActor: AActor | null = null;
 
   constructor() {
     super();
@@ -40,8 +42,25 @@ export class Viewport extends HTMLElement {
     lightActor.rootComponent = sun;
 
     sun.intensity = 1.2;
-    // Rotate 45 degrees pitch (X axis) and 45 degrees yaw (Y axis)
     quat.fromEuler(sun.relativeRotation, -45, -45, 0);
+    // ------------------------------------
+
+    // --- Phase 17.1: Visual Gizmo ---
+    this.gizmoActor = this._world.spawnActor(AActor, 'VisualGizmo', true); // isEditorOnly = true
+    const gizmoComp = this.gizmoActor.addComponent(UGizmoComponent);
+    this.gizmoActor.rootComponent = gizmoComp;
+
+    // Create the buffers (Wait for engine to be ready or just use a small delay if needed, 
+    // but better to get device from Engine)
+    const engine = Engine.getInstance();
+    const renderer = engine.getRenderer();
+    const device = renderer.getDevice();
+    if (device) {
+      gizmoComp.createAxisGizmo(device);
+    }
+
+    // Initial hide
+    gizmoComp.relativeLocation = vec3.fromValues(99999, 99999, 99999);
     // ------------------------------------
   }
 
@@ -49,11 +68,35 @@ export class Viewport extends HTMLElement {
     this.render();
     this.appendChild(this.canvas);
     this.resizeObserver.observe(this);
+
+    EventBus.on('OnActorSelected', this.handleActorSelected);
+    EventBus.on('EngineTick', this.handleTick);
   }
 
   disconnectedCallback() {
     this.resizeObserver.disconnect();
+    EventBus.off('OnActorSelected', this.handleActorSelected);
+    EventBus.off('EngineTick', this.handleTick);
   }
+
+  private handleActorSelected = (actor: AActor | null) => {
+    this.selectedActor = actor;
+
+    if (this.gizmoActor && this.gizmoActor.rootComponent) {
+      if (!actor || actor.isEditorOnly) {
+        // Move gizmo far away when nothing selected
+        this.gizmoActor.rootComponent.relativeLocation = vec3.fromValues(99999, 99999, 99999);
+      }
+    }
+  };
+
+  private handleTick = () => {
+    if (this.selectedActor && this.gizmoActor && this.selectedActor.rootComponent && this.gizmoActor.rootComponent) {
+      // Sync Gizmo Transform with Selected Actor
+      vec3.copy(this.gizmoActor.rootComponent.relativeLocation, this.selectedActor.rootComponent.relativeLocation);
+      quat.copy(this.gizmoActor.rootComponent.relativeRotation, this.selectedActor.rootComponent.relativeRotation);
+    }
+  };
 
   /**
    * Returns the internal canvas element.

@@ -12,12 +12,24 @@ export class Engine {
   private isRunning: boolean = false;
   private lastTime: number = 0;
   private animationFrameId: number | null = null;
+  private static instance: Engine | null = null;
   private renderer: Renderer;
   private world: World;
 
   constructor() {
     this.renderer = new Renderer();
     this.world = new World();
+    Engine.instance = this;
+  }
+
+  /**
+   * Static access to the active engine instance.
+   */
+  public static getInstance(): Engine {
+    if (!Engine.instance) {
+      Engine.instance = new Engine();
+    }
+    return Engine.instance;
   }
 
   /**

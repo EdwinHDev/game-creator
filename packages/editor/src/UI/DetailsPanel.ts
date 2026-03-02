@@ -168,6 +168,19 @@ export class DetailsPanel extends HTMLElement {
         <label>Rot Z</label>
         <input type="number" id="rot-z" step="1.0" value="0">
       </div>
+
+      <div class="input-group">
+        <label>Sca X</label>
+        <input type="number" id="sca-x" step="0.1" value="${root.relativeScale[0]}">
+      </div>
+      <div class="input-group">
+        <label>Sca Y</label>
+        <input type="number" id="sca-y" step="0.1" value="${root.relativeScale[1]}">
+      </div>
+      <div class="input-group">
+        <label>Sca Z</label>
+        <input type="number" id="sca-z" step="0.1" value="${root.relativeScale[2]}">
+      </div>
     `;
 
     section.appendChild(grid);
@@ -209,6 +222,27 @@ export class DetailsPanel extends HTMLElement {
     if (rotX) rotX.addEventListener('input', updateRotation);
     if (rotY) rotY.addEventListener('input', updateRotation);
     if (rotZ) rotZ.addEventListener('input', updateRotation);
+
+    // Scale Binding
+    const scaX = section.querySelector('#sca-x') as HTMLInputElement;
+    const scaY = section.querySelector('#sca-y') as HTMLInputElement;
+    const scaZ = section.querySelector('#sca-z') as HTMLInputElement;
+
+    if (scaX) {
+      scaX.addEventListener('input', (e) => {
+        root.relativeScale[0] = parseFloat((e.target as HTMLInputElement).value) || 1;
+      });
+    }
+    if (scaY) {
+      scaY.addEventListener('input', (e) => {
+        root.relativeScale[1] = parseFloat((e.target as HTMLInputElement).value) || 1;
+      });
+    }
+    if (scaZ) {
+      scaZ.addEventListener('input', (e) => {
+        root.relativeScale[2] = parseFloat((e.target as HTMLInputElement).value) || 1;
+      });
+    }
 
     // Add some quick styles for the groups
     const style = document.createElement('style');
