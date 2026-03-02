@@ -10,7 +10,7 @@ export class EditorCameraController {
   private keys = new Set<string>();
   private isDragging = false;
 
-  private pitch: number = 0; // in degrees
+  private pitch: number = -30; // 30 degrees down
   private yaw: number = 0;   // in degrees
 
   public moveSpeed = 5.0;

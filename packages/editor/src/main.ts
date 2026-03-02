@@ -22,7 +22,7 @@ async function initEngine() {
     const cameraActor = world.spawnActor(AActor, 'MainCamera');
     const camera = cameraActor.addComponent(UCameraComponent);
     cameraActor.rootComponent = camera;
-    vec3.set(camera.relativeLocation, 0, 0, 5); // Pull back to see the center
+    vec3.set(camera.relativeLocation, 0, 5, 10); // Elevated perspective
 
     // --- Phase 12: Editor Grid ---
     const gridActor = world.spawnActor(AActor, 'EditorGrid');
