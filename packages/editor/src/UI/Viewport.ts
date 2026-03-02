@@ -1,7 +1,6 @@
 import {
-  EventBus, AActor, UDirectionalLightComponent, UGizmoComponent,
-  quat, vec3, World, Engine,
-  getRayFromCamera, intersectRayPlane, distancePointToSegment
+  EventBus, AActor, UDirectionalLightComponent, quat, vec3, World, Engine,
+  getRayFromCamera, intersectRayPlane, distancePointToSegment, UMeshComponent
 } from '@game-creator/engine';
 
 /**
@@ -12,8 +11,14 @@ export class Viewport extends HTMLElement {
   private canvas: HTMLCanvasElement;
   private resizeObserver: ResizeObserver;
   private _world: World | null = null;
-  private gizmoActor: AActor | null = null;
   private selectedActor: AActor | null = null;
+
+  // Transform Gizmos (Volumetric)
+  private gizmoX: AActor | null = null;
+  private gizmoY: AActor | null = null;
+  private gizmoZ: AActor | null = null;
+
+  private currentTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
 
   // Interaction State
   private isDraggingGizmo: boolean = false;
@@ -55,23 +60,36 @@ export class Viewport extends HTMLElement {
     quat.fromEuler(sun.relativeRotation, -45, -45, 0);
     // ------------------------------------
 
-    // --- Phase 17.1: Visual Gizmo ---
-    this.gizmoActor = this._world.spawnActor(AActor, 'VisualGizmo', true); // isEditorOnly = true
-    const gizmoComp = this.gizmoActor.addComponent(UGizmoComponent);
-    this.gizmoActor.rootComponent = gizmoComp;
+    // --- Phase 17.3: AAA Volumetric Gizmos ---
+    this.setupVolumetricGizmos();
+  }
 
-    // Create the buffers (Wait for engine to be ready or just use a small delay if needed, 
-    // but better to get device from Engine)
+  private setupVolumetricGizmos() {
+    if (!this._world) return;
     const engine = Engine.getInstance();
-    const renderer = engine.getRenderer();
-    const device = renderer.getDevice();
-    if (device) {
-      gizmoComp.createAxisGizmo(device);
-    }
+    const device = engine.getRenderer().getDevice();
+    if (!device) return;
 
-    // Initial hide
-    gizmoComp.relativeLocation = vec3.fromValues(99999, 99999, 99999);
-    // ------------------------------------
+    // Create 3 Actors for X, Y, Z
+    this.gizmoX = this._world.spawnActor(AActor, 'Gizmo_X', true);
+    this.gizmoY = this._world.spawnActor(AActor, 'Gizmo_Y', true);
+    this.gizmoZ = this._world.spawnActor(AActor, 'Gizmo_Z', true);
+
+    const setupGizmo = (actor: AActor, color: number[], scale: vec3) => {
+      const mesh = actor.addComponent(UMeshComponent);
+      actor.rootComponent = mesh;
+      mesh.createBox(device);
+      if (mesh.material) {
+        mesh.material.baseColor = new Float32Array([...color, 1.0]);
+      }
+      vec3.copy(mesh.relativeScale, scale);
+      // Hide initially
+      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
+    };
+
+    setupGizmo(this.gizmoX, [1, 0.1, 0.1], vec3.fromValues(2.0, 0.05, 0.05)); // Thin Red Box
+    setupGizmo(this.gizmoY, [0.1, 1, 0.1], vec3.fromValues(0.05, 2.0, 0.05)); // Thin Green Box
+    setupGizmo(this.gizmoZ, [0.1, 0.1, 1], vec3.fromValues(0.05, 0.05, 2.0)); // Thin Blue Box
   }
 
   connectedCallback() {
@@ -81,6 +99,9 @@ export class Viewport extends HTMLElement {
 
     EventBus.on('OnActorSelected', this.handleActorSelected);
     EventBus.on('EngineTick', this.handleTick);
+    EventBus.on('OnTransformModeChanged', (mode: any) => {
+      this.currentTransformMode = mode;
+    });
 
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
     window.addEventListener('mousemove', this.handleMouseMove);
@@ -110,7 +131,7 @@ export class Viewport extends HTMLElement {
 
     // Pick Axis
     const pos = this.selectedActor.rootComponent.relativeLocation;
-    const gizmoSize = 1.5;
+    const gizmoSize = 2.0;
 
     const axes = [
       { dir: vec3.fromValues(1, 0, 0), axis: 'X' as const },
@@ -119,16 +140,12 @@ export class Viewport extends HTMLElement {
     ];
 
     let bestAxis: 'X' | 'Y' | 'Z' | null = null;
-    let minDistance = 0.5; // Threshold
+    let minDistance = 0.8; // Increased threshold for volumetric picking
 
     for (const a of axes) {
       const end = vec3.create();
       vec3.scaleAndAdd(end, pos, a.dir, gizmoSize);
 
-      // Approximate: find closest point on ray to the segment
-      // For simplicity, we can just check distance from ray to segment
-      // A ray is origin + t*dir. 
-      // We'll use a simpler distance check: distance from ray to a few points on the segment
       const dist = distancePointToSegment(this.getClosestPointOnRayToPoint(ray, pos), pos, end);
 
       if (dist < minDistance) {
@@ -174,8 +191,6 @@ export class Viewport extends HTMLElement {
       if (this.dragAxis === 'X') pos[0] = this.dragStartActorPos[0] + delta[0];
       if (this.dragAxis === 'Y') pos[1] = this.dragStartActorPos[1] + delta[1];
       if (this.dragAxis === 'Z') pos[2] = this.dragStartActorPos[2] + delta[2];
-
-      // Force update of UI if needed (though it should update next frame)
     }
   };
 
@@ -207,19 +222,56 @@ export class Viewport extends HTMLElement {
   private handleActorSelected = (actor: AActor | null) => {
     this.selectedActor = actor;
 
-    if (this.gizmoActor && this.gizmoActor.rootComponent) {
-      if (!actor || actor.isEditorOnly) {
-        // Move gizmo far away when nothing selected
-        this.gizmoActor.rootComponent.relativeLocation = vec3.fromValues(99999, 99999, 99999);
-      }
+    if (!actor || actor.isEditorOnly || this.currentTransformMode !== 'translate') {
+      this.hideGizmos();
     }
   };
 
+  private hideGizmos() {
+    const hidePos = vec3.fromValues(99999, 99999, 99999);
+    if (this.gizmoX?.rootComponent) vec3.copy(this.gizmoX.rootComponent.relativeLocation, hidePos);
+    if (this.gizmoY?.rootComponent) vec3.copy(this.gizmoY.rootComponent.relativeLocation, hidePos);
+    if (this.gizmoZ?.rootComponent) vec3.copy(this.gizmoZ.rootComponent.relativeLocation, hidePos);
+  }
+
   private handleTick = () => {
-    if (this.selectedActor && this.gizmoActor && this.selectedActor.rootComponent && this.gizmoActor.rootComponent) {
-      // Sync Gizmo Transform with Selected Actor
-      vec3.copy(this.gizmoActor.rootComponent.relativeLocation, this.selectedActor.rootComponent.relativeLocation);
-      quat.copy(this.gizmoActor.rootComponent.relativeRotation, this.selectedActor.rootComponent.relativeRotation);
+    if (this.selectedActor && this.selectedActor.rootComponent) {
+      const root = this.selectedActor.rootComponent;
+      const pos = root.relativeLocation;
+      const rot = root.relativeRotation;
+
+      if (this.currentTransformMode === 'translate') {
+        // Sync Gizmos with Selected Actor
+        // Offset them so they represent "arrows" starting from the center
+        // X Gizmo: move 1.0 units in its local X
+        if (this.gizmoX?.rootComponent) {
+          vec3.copy(this.gizmoX.rootComponent.relativeLocation, pos);
+          const offset = vec3.fromValues(2, 0, 0);
+          vec3.transformQuat(offset, offset, rot);
+          vec3.add(this.gizmoX.rootComponent.relativeLocation, this.gizmoX.rootComponent.relativeLocation, offset);
+          quat.copy(this.gizmoX.rootComponent.relativeRotation, rot);
+        }
+
+        if (this.gizmoY?.rootComponent) {
+          vec3.copy(this.gizmoY.rootComponent.relativeLocation, pos);
+          const offset = vec3.fromValues(0, 2, 0);
+          vec3.transformQuat(offset, offset, rot);
+          vec3.add(this.gizmoY.rootComponent.relativeLocation, this.gizmoY.rootComponent.relativeLocation, offset);
+          quat.copy(this.gizmoY.rootComponent.relativeRotation, rot);
+        }
+
+        if (this.gizmoZ?.rootComponent) {
+          vec3.copy(this.gizmoZ.rootComponent.relativeLocation, pos);
+          const offset = vec3.fromValues(0, 0, 2);
+          vec3.transformQuat(offset, offset, rot);
+          vec3.add(this.gizmoZ.rootComponent.relativeLocation, this.gizmoZ.rootComponent.relativeLocation, offset);
+          quat.copy(this.gizmoZ.rootComponent.relativeRotation, rot);
+        }
+      } else {
+        this.hideGizmos();
+      }
+    } else {
+      this.hideGizmos();
     }
   };
 
@@ -254,8 +306,6 @@ export class Viewport extends HTMLElement {
     // We no longer update canvas.width/height here to avoid flickering.
     // The Engine's tick loop will detect the change in clientWidth/Height.
     EventBus.emit('ViewportResized', { width, height });
-
-    console.debug(`Viewport DOM resized to: ${width}x${height}`);
   }
 }
 

@@ -18,39 +18,95 @@ export class TopBar extends HTMLElement {
   public render() {
     this.innerHTML = `
       <div class="top-bar-content">
+        <div class="transform-tools">
+          <button id="btn-move" class="btn-tool active">Move</button>
+          <button id="btn-rotate" class="btn-tool">Rotate</button>
+          <button id="btn-scale" class="btn-tool">Scale</button>
+        </div>
+        <div class="divider"></div>
         <button id="btn-add-cube" class="btn-primary">+ Add Cube</button>
       </div>
       <style>
         .top-bar-content {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 15px;
           height: 100%;
-          padding: 0 10px;
+          padding: 0 15px;
+          background-color: var(--panel-bg);
+          border-bottom: 1px solid var(--border-color);
         }
-        .btn-primary {
+        .transform-tools {
+          display: flex;
+          gap: 4px;
+          background-color: rgba(0,0,0,0.2);
+          padding: 3px;
+          border-radius: 6px;
+        }
+        .btn-tool {
+          background: transparent;
+          color: #aaa;
+          border: none;
+          padding: 4px 10px;
+          border-radius: 4px;
+          font-size: 11px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .btn-tool:hover {
+          color: white;
+          background-color: rgba(255,255,255,0.05);
+        }
+        .btn-tool.active {
           background-color: var(--accent-color);
           color: white;
+          font-weight: bold;
+        }
+        .divider {
+          width: 1px;
+          height: 20px;
+          background-color: var(--border-color);
+        }
+        .btn-primary {
+          background-color: #444;
+          color: #eee;
           border: none;
-          padding: 4px 12px;
+          padding: 5px 12px;
           border-radius: 4px;
           font-size: 11px;
           font-weight: bold;
           cursor: pointer;
-          transition: filter 0.2s;
+          transition: all 0.2s;
         }
         .btn-primary:hover {
-          filter: brightness(1.1);
-        }
-        .btn-primary:active {
-          filter: brightness(0.9);
+          background-color: #555;
         }
       </style>
     `;
 
-    const btn = this.querySelector('#btn-add-cube');
-    if (btn) {
-      btn.addEventListener('click', () => this.spawnCube());
+    // Listeners for transform modes
+    const modes: ('translate' | 'rotate' | 'scale')[] = ['translate', 'rotate', 'scale'];
+    const ids = ['btn-move', 'btn-rotate', 'btn-scale'];
+
+    ids.forEach((id, index) => {
+      const btn = this.querySelector(`#${id}`);
+      if (btn) {
+        btn.addEventListener('click', () => {
+          // Update visual active state
+          this.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+
+          // Emit event
+          import('@game-creator/engine').then(({ EventBus }) => {
+            EventBus.emit('OnTransformModeChanged', modes[index]);
+          });
+        });
+      }
+    });
+
+    const addBtn = this.querySelector('#btn-add-cube');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => this.spawnCube());
     }
   }
 
