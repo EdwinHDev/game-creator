@@ -1,0 +1,19 @@
+{
+  "name": "game-creator",
+  "private": true,
+  "description": "A 3D Game Engine and Visual Editor for the web",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=@game-creator/editor",
+    "dev:editor": "npm run dev --workspace=@game-creator/editor",
+    "build": "npm run build --workspaces",
+    "type-check": "tsc --build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.20",
+    "typescript": "^5.3.3",
+    "vite": "^5.1.4"
+  }
+}
