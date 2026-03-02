@@ -11,6 +11,7 @@ export class UMeshComponent extends USceneComponent {
   public indexCount: number = 0;
   public vertexCount: number = 0;
   public topology: GPUPrimitiveTopology = 'triangle-list';
+  public isGizmo: boolean = false; // Phase 17.9.7: Flag for X-Ray rendering
   public material: UMaterial | null = null;
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
@@ -27,47 +28,49 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a simple 3D box and creates GPU buffers for it.
    */
-  public createBox(device: GPUDevice): void {
+  public createBox(device: GPUDevice, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
 
-    // 24 vertices (4 per face) for unique normals (Flat Shading)
-    // Structure: posX, posY, posZ, normX, normY, normZ
+    const [r, g, b] = color;
+    // 24 vertices (4 per face)
+    // Structure: posX, posY, posZ, colR, colG, colB
     const vertices = new Float32Array([
-      // Front face (Normal: 0, 0, 1)
-      -1, -1, 1, 0, 0, 1,
-      1, -1, 1, 0, 0, 1,
-      1, 1, 1, 0, 0, 1,
-      -1, 1, 1, 0, 0, 1,
+      // Front face
+      -1, -1, 1, r, g, b,
+      1, -1, 1, r, g, b,
+      1, 1, 1, r, g, b,
+      -1, 1, 1, r, g, b,
 
-      // Back face (Normal: 0, 0, -1)
-      -1, -1, -1, 0, 0, -1,
-      -1, 1, -1, 0, 0, -1,
-      1, 1, -1, 0, 0, -1,
-      1, -1, -1, 0, 0, -1,
+      // Back face
+      -1, -1, -1, r, g, b,
+      -1, 1, -1, r, g, b,
+      1, 1, -1, r, g, b,
+      1, -1, -1, r, g, b,
 
-      // Top face (Normal: 0, 1, 0)
-      -1, 1, -1, 0, 1, 0,
-      -1, 1, 1, 0, 1, 0,
-      1, 1, 1, 0, 1, 0,
-      1, 1, -1, 0, 1, 0,
+      // Top face
+      -1, 1, -1, r, g, b,
+      -1, 1, 1, r, g, b,
+      1, 1, 1, r, g, b,
+      1, 1, -1, r, g, b,
 
-      // Bottom face (Normal: 0, -1, 0)
-      -1, -1, -1, 0, -1, 0,
-      1, -1, -1, 0, -1, 0,
-      1, -1, 1, 0, -1, 0,
-      -1, -1, 1, 0, -1, 0,
+      // Bottom face
+      -1, -1, -1, r, g, b,
+      1, -1, -1, r, g, b,
+      1, -1, 1, r, g, b,
+      -1, -1, 1, r, g, b,
 
-      // Right face (Normal: 1, 0, 0)
-      1, -1, -1, 1, 0, 0,
-      1, 1, -1, 1, 0, 0,
-      1, 1, 1, 1, 0, 0,
-      1, -1, 1, 1, 0, 0,
+      // Right face
+      1, -1, -1, r, g, b,
+      1, 1, -1, r, g, b,
+      1, 1, 1, r, g, b,
+      1, -1, 1, r, g, b,
 
-      // Left face (Normal: -1, 0, 0)
-      -1, -1, -1, -1, 0, 0,
-      -1, -1, 1, -1, 0, 0,
-      -1, 1, 1, -1, 0, 0,
-      -1, 1, -1, -1, 0, 0,
+      // Left face
+      -1, -1, -1, r, g, b,
+      -1, -1, 1, r, g, b,
+      -1, 1, 1, r, g, b,
+      -1, 1, -1, r, g, b,
     ]);
 
     // 36 indices (6 faces * 2 triangles * 3 vertices)
@@ -149,63 +152,49 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Generates a simple pyramid for gizmo arrow heads.
-   * Apical vertex is at (0, height, 0). Base is a square on XZ plane.
+   * Generates a solid pyramid for gizmo arrow heads.
    */
-  public createPyramid(device: GPUDevice, height: number = 1.0, radius: number = 0.5): void {
+  public createPyramid(device: GPUDevice, height: number = 0.15, radius: number = 0.05, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
-
-    // 18 vertices (3 per face * 4 lateral faces + 3 per triangle * 2 base triangles)
-    // Structure: posX, posY, posZ, normX, normY, normZ
-    // We use unique vertices per face for Flat Shading.
 
     const h = height;
     const r = radius;
+    const [cr, cg, cb] = color;
 
-    // Normals for lateral faces
-    // Face Front-Right: Normal points somewhere between +Z and +X
-    // For simplicity, we'll calculate them or use approximate ones. 
-    // A better way is to normalize cross product of edges.
-
-    // Front (+Z): points (0,h,0), (-r,0,r), (r,0,r)
-    // Back (-Z): points (0,h,0), (r,0,-r), (-r,0,-r)
-    // Right (+X): points (0,h,0), (r,0,r), (r,0,-r)
-    // Left (-X): points (0,h,0), (-r,0,-r), (-r,0,r)
-
+    // 18 vertices
     const vertices = new Float32Array([
       // Front Face
-      0, h, 0, 0, 0.5, 1,
-      -r, 0, r, 0, 0.5, 1,
-      r, 0, r, 0, 0.5, 1,
+      0, h, 0, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
 
       // Back Face
-      0, h, 0, 0, 0.5, -1,
-      r, 0, -r, 0, 0.5, -1,
-      -r, 0, -r, 0, 0.5, -1,
+      0, h, 0, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
 
       // Right Face
-      0, h, 0, 1, 0.5, 0,
-      r, 0, r, 1, 0.5, 0,
-      r, 0, -r, 1, 0.5, 0,
+      0, h, 0, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
 
       // Left Face
-      0, h, 0, -1, 0.5, 0,
-      -r, 0, -r, -1, 0.5, 0,
-      -r, 0, r, -1, 0.5, 0,
+      0, h, 0, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
 
-      // Base (2 triangles)
-      -r, 0, -r, 0, -1, 0,
-      r, 0, -r, 0, -1, 0,
-      r, 0, r, 0, -1, 0,
-
-      -r, 0, -r, 0, -1, 0,
-      r, 0, r, 0, -1, 0,
-      -r, 0, r, 0, -1, 0,
+      // Base
+      -r, 0, -r, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
     ]);
 
-    this.indexCount = 0; // No index buffer for this simple one
-    this.vertexCount = vertices.length / 6;
-
+    this.vertexCount = 18;
+    this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -213,7 +202,219 @@ export class UMeshComponent extends USceneComponent {
     });
     new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
     this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
 
+  /**
+   * Generates a single line for a gizmo axis.
+   */
+  public createGizmoAxis(device: GPUDevice, length: number = 1.0, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const [r, g, b] = color;
+    const vertices = new Float32Array([
+      0, 0, 0, r, g, b,
+      0, length, 0, r, g, b,
+    ]);
+
+    this.vertexCount = 2;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a line-based diamond for translation gizmo tips.
+   */
+  public createDiamond(device: GPUDevice, size: number = 0.1, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const s = size;
+    const [r, g, b] = color;
+    const vertices = new Float32Array([
+      0, s, 0, r, g, b,
+      s, 0, 0, r, g, b,
+
+      s, 0, 0, r, g, b,
+      0, -s, 0, r, g, b,
+
+      0, -s, 0, r, g, b,
+      -s, 0, 0, r, g, b,
+
+      -s, 0, 0, r, g, b,
+      0, s, 0, r, g, b,
+
+      // Vertical pass if we want it to look 3D-ish but flat
+      // 0, 0, s,   0, 1, 0,
+      // 0, 0, -s,  0, 1, 0,
+    ]);
+
+    this.vertexCount = 8;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a line-based square for scale gizmo tips.
+   */
+  public createSquare(device: GPUDevice, size: number = 0.1): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const s = size * 0.5;
+    const vertices = new Float32Array([
+      -s, s, 0, 0, 1, 0,
+      s, s, 0, 0, 1, 0,
+
+      s, s, 0, 0, 1, 0,
+      s, -s, 0, 0, 1, 0,
+
+      s, -s, 0, 0, 1, 0,
+      -s, -s, 0, 0, 1, 0,
+
+      -s, -s, 0, 0, 1, 0,
+      -s, s, 0, 0, 1, 0,
+    ]);
+
+    this.vertexCount = 8;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a line-based circle for origin or rotation gizmos.
+   */
+  public createCircle(device: GPUDevice, radius: number = 1.0, segments: number = 32): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const vertices = new Float32Array(segments * 2 * 6); // 2 vertices per segment * 6 floats
+    for (let i = 0; i < segments; i++) {
+      const angle1 = (i / segments) * Math.PI * 2;
+      const angle2 = ((i + 1) / segments) * Math.PI * 2;
+
+      const x1 = Math.cos(angle1) * radius;
+      const z1 = Math.sin(angle1) * radius;
+      const x2 = Math.cos(angle2) * radius;
+      const z2 = Math.sin(angle2) * radius;
+
+      const off = i * 12;
+      // Vert 1
+      vertices[off + 0] = x1; vertices[off + 1] = 0; vertices[off + 2] = z1;
+      vertices[off + 3] = 0; vertices[off + 4] = 1; vertices[off + 5] = 0;
+      // Vert 2
+      vertices[off + 6] = x2; vertices[off + 7] = 0; vertices[off + 8] = z2;
+      vertices[off + 9] = 0; vertices[off + 10] = 1; vertices[off + 11] = 0;
+    }
+
+    this.vertexCount = segments * 2;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a line-based cone for translation gizmo tips.
+   */
+  public createGizmoCone(device: GPUDevice, height: number = 0.2, radius: number = 0.08, segments: number = 8): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const vertices = [];
+    // Base circle
+    for (let i = 0; i < segments; i++) {
+      const a1 = (i / segments) * Math.PI * 2;
+      const a2 = ((i + 1) / segments) * Math.PI * 2;
+      const x1 = Math.cos(a1) * radius;
+      const z1 = Math.sin(a1) * radius;
+      const x2 = Math.cos(a2) * radius;
+      const z2 = Math.sin(a2) * radius;
+
+      // Base edge
+      vertices.push(x1, 0, z1, 0, 1, 0);
+      vertices.push(x2, 0, z2, 0, 1, 0);
+
+      // Line to tip
+      vertices.push(x1, 0, z1, 0, 1, 0);
+      vertices.push(0, height, 0, 0, 1, 0);
+    }
+
+    const vertexData = new Float32Array(vertices);
+    this.vertexCount = vertexData.length / 6;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertexData);
+    this.vertexBuffer.unmap();
+    this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a line-based cube for scale gizmo tips.
+   */
+  public createGizmoCube(device: GPUDevice, size: number = 0.1): void {
+    this.vertexBuffer?.destroy();
+    this.topology = 'line-list';
+
+    const s = size * 0.5;
+    const vertices = new Float32Array([
+      // Bottom
+      -s, -s, -s, 0, 1, 0, s, -s, -s, 0, 1, 0,
+      s, -s, -s, 0, 1, 0, s, -s, s, 0, 1, 0,
+      s, -s, s, 0, 1, 0, -s, -s, s, 0, 1, 0,
+      -s, -s, s, 0, 1, 0, -s, -s, -s, 0, 1, 0,
+      // Top
+      -s, s, -s, 0, 1, 0, s, s, -s, 0, 1, 0,
+      s, s, -s, 0, 1, 0, s, s, s, 0, 1, 0,
+      s, s, s, 0, 1, 0, -s, s, s, 0, 1, 0,
+      -s, s, s, 0, 1, 0, -s, s, -s, 0, 1, 0,
+      // Sides
+      -s, -s, -s, 0, 1, 0, -s, s, -s, 0, 1, 0,
+      s, -s, -s, 0, 1, 0, s, s, -s, 0, 1, 0,
+      s, -s, s, 0, 1, 0, s, s, s, 0, 1, 0,
+      -s, -s, s, 0, 1, 0, -s, s, s, 0, 1, 0,
+    ]);
+
+    this.vertexCount = 24;
+    this.indexCount = 0;
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
     this.material = new UMaterial();
   }
 

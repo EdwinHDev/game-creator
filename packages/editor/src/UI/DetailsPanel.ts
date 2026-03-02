@@ -14,12 +14,14 @@ export class DetailsPanel extends HTMLElement {
   connectedCallback() {
     EventBus.on('OnActorSelected', this.handleActorSelected);
     EventBus.on('OnActorDestroyed', this.handleActorDestroyed);
+    EventBus.on('EngineTick', this.handleTick);
     this.render();
   }
 
   disconnectedCallback() {
     EventBus.off('OnActorSelected', this.handleActorSelected);
     EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
+    EventBus.off('EngineTick', this.handleTick);
   }
 
   private handleActorSelected = (actor: any) => {
@@ -34,6 +36,31 @@ export class DetailsPanel extends HTMLElement {
       this.render();
     }
   };
+
+  private handleTick = () => {
+    if (!this.currentActor || !this.currentActor.rootComponent) return;
+    this.updateInputValues();
+  };
+
+  private updateInputValues() {
+    const root = this.currentActor.rootComponent;
+
+    // Position
+    const pX = this.querySelector('#pos-x') as HTMLInputElement;
+    const pY = this.querySelector('#pos-y') as HTMLInputElement;
+    const pZ = this.querySelector('#pos-z') as HTMLInputElement;
+    if (pX && document.activeElement !== pX) pX.value = root.relativeLocation[0].toFixed(2);
+    if (pY && document.activeElement !== pY) pY.value = root.relativeLocation[1].toFixed(2);
+    if (pZ && document.activeElement !== pZ) pZ.value = root.relativeLocation[2].toFixed(2);
+
+    // Scale
+    const sX = this.querySelector('#sca-x') as HTMLInputElement;
+    const sY = this.querySelector('#sca-y') as HTMLInputElement;
+    const sZ = this.querySelector('#sca-z') as HTMLInputElement;
+    if (sX && document.activeElement !== sX) sX.value = root.relativeScale[0].toFixed(2);
+    if (sY && document.activeElement !== sY) sY.value = root.relativeScale[1].toFixed(2);
+    if (sZ && document.activeElement !== sZ) sZ.value = root.relativeScale[2].toFixed(2);
+  }
 
   private render() {
     // 1. Clear contents

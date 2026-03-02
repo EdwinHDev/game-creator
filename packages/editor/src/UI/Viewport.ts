@@ -1,6 +1,6 @@
 import {
   EventBus, AActor, UDirectionalLightComponent, quat, vec3, World, Engine,
-  getRayFromCamera, intersectRayPlane, distancePointToSegment, UMeshComponent
+  getRayFromCamera, intersectRayPlane, UMeshComponent
 } from '@game-creator/engine';
 
 /**
@@ -24,11 +24,13 @@ export class Viewport extends HTMLElement {
   private arrowHeadZ: AActor | null = null;
 
   private currentTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
+  private transformSpace: 'global' | 'local' = 'global';
 
   // Interaction State
   private isDraggingGizmo: boolean = false;
   private dragAxis: 'X' | 'Y' | 'Z' | null = null;
   private dragStartActorPos: vec3 = vec3.create();
+  private dragStartActorScale: vec3 = vec3.create();
   private dragStartMouseHit: vec3 = vec3.create();
 
   constructor() {
@@ -66,54 +68,61 @@ export class Viewport extends HTMLElement {
     // ------------------------------------
 
     // --- Phase 17.3: AAA Volumetric Gizmos ---
-    this.setupVolumetricGizmos();
+    this.rebuildGizmos();
   }
 
-  private setupVolumetricGizmos() {
+  private rebuildGizmos() {
     if (!this._world) return;
+
+    // 1. Destroy existing to avoid "ghost" buffers
+    const toDestroy = [this.gizmoX, this.gizmoY, this.gizmoZ, this.arrowHeadX, this.arrowHeadY, this.arrowHeadZ];
+    for (const actor of toDestroy) {
+      if (actor) this._world.destroyActor(actor);
+    }
+
     const engine = Engine.getInstance();
     const device = engine.getRenderer().getDevice();
     if (!device) return;
 
-    // Create 3 Actors for X, Y, Z
-    this.gizmoX = this._world.spawnActor(AActor, 'Gizmo_X', true);
-    this.gizmoY = this._world.spawnActor(AActor, 'Gizmo_Y', true);
-    this.gizmoZ = this._world.spawnActor(AActor, 'Gizmo_Z', true);
+    // Blender Reales: X: #FF3352, Y: #8BDC00, Z: #2890FF
+    const colX = [1.0, 0.2, 0.321];
+    const colY = [0.545, 0.862, 0.0];
+    const colZ = [0.156, 0.564, 1.0];
+    // Refining Phase 17.9.7: Final Calibration.
 
-    // Create 3 Actors for Arrow Heads
-    this.arrowHeadX = this._world.spawnActor(AActor, 'ArrowHead_X', true);
-    this.arrowHeadY = this._world.spawnActor(AActor, 'ArrowHead_Y', true);
-    this.arrowHeadZ = this._world.spawnActor(AActor, 'ArrowHead_Z', true);
-
-    const setupGizmo = (actor: AActor, color: number[], scale: vec3) => {
+    const setupPart = (name: string, isTip: boolean, color: number[]): AActor => {
+      const actor = this._world!.spawnActor(AActor, name, true);
       const mesh = actor.addComponent(UMeshComponent);
       actor.rootComponent = mesh;
-      mesh.createBox(device);
+
+      if (!isTip) {
+        mesh.createGizmoAxis(device, 1.0, color);
+      } else {
+        if (this.currentTransformMode === 'translate') {
+          mesh.createPyramid(device, 0.15, 0.05, color); // Solid X-Ray Pyramid (15% reduced)
+        } else if (this.currentTransformMode === 'scale') {
+          mesh.createBox(device, color);
+          vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085); // Pro-Level Diminutive Cube (15% reduced)
+        }
+      }
+
       if (mesh.material) {
         mesh.material.baseColor = new Float32Array([...color, 1.0]);
       }
-      vec3.copy(mesh.relativeScale, scale);
-      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
+      mesh.isGizmo = true;
+      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999); // Hide initially
+      return actor;
     };
 
-    const setupArrow = (actor: AActor, color: number[]) => {
-      const mesh = actor.addComponent(UMeshComponent);
-      actor.rootComponent = mesh;
-      mesh.createPyramid(device, 0.3, 0.1);
-      if (mesh.material) {
-        mesh.material.baseColor = new Float32Array([...color, 1.0]);
-      }
-      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
-    };
+    this.gizmoX = setupPart('Gizmo_X', false, colX);
+    this.gizmoY = setupPart('Gizmo_Y', false, colY);
+    this.gizmoZ = setupPart('Gizmo_Z', false, colZ);
 
-    // Phase 17.4: Reduced scales (50%)
-    setupGizmo(this.gizmoX, [1, 0.1, 0.1], vec3.fromValues(1.0, 0.025, 0.025));
-    setupGizmo(this.gizmoY, [0.1, 1, 0.1], vec3.fromValues(0.025, 1.0, 0.025));
-    setupGizmo(this.gizmoZ, [0.1, 0.1, 1], vec3.fromValues(0.025, 0.025, 1.0));
+    this.arrowHeadX = setupPart('ArrowHead_X', true, colX);
+    this.arrowHeadY = setupPart('ArrowHead_Y', true, colY);
+    this.arrowHeadZ = setupPart('ArrowHead_Z', true, colZ);
 
-    setupArrow(this.arrowHeadX, [1, 0.1, 0.1]);
-    setupArrow(this.arrowHeadY, [0.1, 1, 0.1]);
-    setupArrow(this.arrowHeadZ, [0.1, 0.1, 1]);
+    this.handleTick(); // Force immediate update after reconstruction
   }
 
   connectedCallback() {
@@ -125,6 +134,11 @@ export class Viewport extends HTMLElement {
     EventBus.on('EngineTick', this.handleTick);
     EventBus.on('OnTransformModeChanged', (mode: any) => {
       this.currentTransformMode = mode;
+      this.rebuildGizmos();
+    });
+
+    EventBus.on('OnTransformSpaceChanged', (space: any) => {
+      this.transformSpace = space;
     });
 
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
@@ -153,9 +167,22 @@ export class Viewport extends HTMLElement {
     const { width, height } = this.canvas;
     const ray = getRayFromCamera(e.offsetX, e.offsetY, width, height, viewProj);
 
-    // Pick Axis
+    // Pick Axis (Synchronized with scaleFactor) - Phase 17.9.10 Refinement
     const pos = this.selectedActor.rootComponent.relativeLocation;
-    const gizmoSize = 2.0;
+    const rot = this.selectedActor.rootComponent.relativeRotation;
+
+    // Calculate current visual scaleFactor
+    let camPos = vec3.fromValues(0, 10, 20);
+    for (const actor of this._world!.actors) {
+      if (actor.rootComponent && (actor.name === 'MainCamera' || actor.rootComponent.constructor.name === 'UCameraComponent')) {
+        camPos = actor.rootComponent.relativeLocation;
+        break;
+      }
+    }
+    const dist2Cam = vec3.distance(camPos, pos);
+    const scaleFactor = dist2Cam * 0.15;
+    const gizmoSize = 1.0 * scaleFactor; // Match visual tip exactly
+    const hitThreshold = 0.08 * scaleFactor; // Phase 17.9.10 Pro radius
 
     const axes = [
       { dir: vec3.fromValues(1, 0, 0), axis: 'X' as const },
@@ -164,16 +191,50 @@ export class Viewport extends HTMLElement {
     ];
 
     let bestAxis: 'X' | 'Y' | 'Z' | null = null;
-    let minDistance = 0.8; // Increased threshold for volumetric picking
+    let closestDist = Infinity;
 
     for (const a of axes) {
-      const end = vec3.create();
-      vec3.scaleAndAdd(end, pos, a.dir, gizmoSize);
+      const worldDir = vec3.create();
+      if (this.transformSpace === 'local') {
+        vec3.transformQuat(worldDir, a.dir, rot);
+      } else {
+        vec3.copy(worldDir, a.dir);
+      }
 
-      const dist = distancePointToSegment(this.getClosestPointOnRayToPoint(ray, pos), pos, end);
+      // Algorithm: Closest distance between Mouse Ray (O, D) and Gizmo Segment (pos, pos + worldDir * gizmoSize)
+      // Reference: Real-Time Collision Detection (Christer Ericson)
+      const u = worldDir;
+      const v = ray.direction;
+      const w0 = vec3.create();
+      vec3.subtract(w0, pos, ray.origin);
 
-      if (dist < minDistance) {
-        minDistance = dist;
+      const b = vec3.dot(u, v);
+      const d = vec3.dot(u, w0);
+      const e = vec3.dot(v, w0);
+
+      const denom = 1.0 - b * b;
+      let sc, tc;
+
+      if (denom < 0.0001) {
+        sc = -d;
+        tc = 0.0;
+      } else {
+        sc = (b * e - d) / denom;
+        tc = (e - b * d) / denom;
+      }
+
+      // Clamp sc to the segment length [0, gizmoSize]
+      sc = Math.max(0, Math.min(sc, gizmoSize));
+
+      const P_axis = vec3.create();
+      vec3.scaleAndAdd(P_axis, pos, worldDir, sc);
+      const P_ray = vec3.create();
+      vec3.scaleAndAdd(P_ray, ray.origin, ray.direction, tc);
+
+      const distHit = vec3.distance(P_axis, P_ray);
+
+      if (distHit < hitThreshold && distHit < closestDist) {
+        closestDist = distHit;
         bestAxis = a.axis;
       }
     }
@@ -182,8 +243,8 @@ export class Viewport extends HTMLElement {
       this.isDraggingGizmo = true;
       this.dragAxis = bestAxis;
       vec3.copy(this.dragStartActorPos, pos);
+      vec3.copy(this.dragStartActorScale, this.selectedActor.rootComponent.relativeScale);
 
-      // Intersection with a plane for dragging
       const planeNormal = this.getDragPlaneNormal(bestAxis);
       const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
       if (hit) {
@@ -211,10 +272,44 @@ export class Viewport extends HTMLElement {
       const delta = vec3.create();
       vec3.subtract(delta, hit, this.dragStartMouseHit);
 
-      const pos = this.selectedActor.rootComponent.relativeLocation;
-      if (this.dragAxis === 'X') pos[0] = this.dragStartActorPos[0] + delta[0];
-      if (this.dragAxis === 'Y') pos[1] = this.dragStartActorPos[1] + delta[1];
-      if (this.dragAxis === 'Z') pos[2] = this.dragStartActorPos[2] + delta[2];
+      const root = this.selectedActor.rootComponent;
+      const pos = root.relativeLocation;
+      const rot = root.relativeRotation;
+
+      if (this.currentTransformMode === 'translate') {
+        const moveAxis = vec3.create();
+        if (this.dragAxis === 'X') vec3.set(moveAxis, 1, 0, 0);
+        if (this.dragAxis === 'Y') vec3.set(moveAxis, 0, 1, 0);
+        if (this.dragAxis === 'Z') vec3.set(moveAxis, 0, 0, 1);
+
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(moveAxis, moveAxis, rot);
+        }
+
+        // Project delta onto the chosen axis
+        // For simple dragging, we'll just use the delta components if global, 
+        // or transform the whole delta if local.
+        // Actually the current delta calculation is simplified. 
+        // Let's refine for local space:
+        if (this.transformSpace === 'global') {
+          if (this.dragAxis === 'X') pos[0] = this.dragStartActorPos[0] + delta[0];
+          if (this.dragAxis === 'Y') pos[1] = this.dragStartActorPos[1] + delta[1];
+          if (this.dragAxis === 'Z') pos[2] = this.dragStartActorPos[2] + delta[2];
+        } else {
+          // In Local mode, we project delta onto the rotated axis
+          // This is a simplified approach
+          const strength = vec3.dot(delta, moveAxis);
+          vec3.scaleAndAdd(pos, this.dragStartActorPos, moveAxis, strength);
+        }
+      } else if (this.currentTransformMode === 'scale') {
+        const sc = root.relativeScale;
+        if (this.dragAxis === 'X') sc[0] = Math.max(0.01, this.dragStartActorScale[0] + delta[0]);
+        if (this.dragAxis === 'Y') sc[1] = Math.max(0.01, this.dragStartActorScale[1] + delta[1]);
+        if (this.dragAxis === 'Z') sc[2] = Math.max(0.01, this.dragStartActorScale[2] + delta[2]);
+      }
+
+      // Immediate Refresh of Gizmo Position (Phase 17.6 Fix)
+      this.handleTick();
     }
   };
 
@@ -232,16 +327,6 @@ export class Viewport extends HTMLElement {
     return vec3.fromValues(0, 1, 0);
   }
 
-  private getClosestPointOnRayToPoint(ray: { origin: vec3, direction: vec3 }, point: vec3): vec3 {
-    // Helper to find a representative point for distance check
-    // Just return the projection of 'point' onto the ray
-    const v = vec3.create();
-    vec3.subtract(v, point, ray.origin);
-    const t = vec3.dot(v, ray.direction);
-    const closest = vec3.create();
-    vec3.scaleAndAdd(closest, ray.origin, ray.direction, t);
-    return closest;
-  }
 
   private handleActorSelected = (actor: AActor | null) => {
     this.selectedActor = actor;
@@ -251,8 +336,10 @@ export class Viewport extends HTMLElement {
       this._world.selectedActorId = actor ? actor.id : null;
     }
 
-    if (!actor || actor.isEditorOnly || this.currentTransformMode !== 'translate') {
+    if (!actor || actor.isEditorOnly || (this.currentTransformMode !== 'translate' && this.currentTransformMode !== 'scale')) {
       this.hideGizmos();
+    } else {
+      this.rebuildGizmos();
     }
   };
 
@@ -272,32 +359,70 @@ export class Viewport extends HTMLElement {
       const pos = root.relativeLocation;
       const rot = root.relativeRotation;
 
-      if (this.currentTransformMode === 'translate') {
-        const syncPart = (actor: AActor | null, localOffset: vec3, localRotEuler?: vec3) => {
+      if (this.currentTransformMode === 'translate' || this.currentTransformMode === 'scale') {
+        // --- Phase 17.8: Constant Size Logic ---
+        let camPos = vec3.fromValues(0, 10, 20); // Fallback
+        for (const actor of this._world!.actors) {
+          if (actor.rootComponent && (actor.name === 'MainCamera' || actor.rootComponent.constructor.name === 'UCameraComponent')) {
+            camPos = actor.rootComponent.relativeLocation;
+            break;
+          }
+        }
+
+        const dist = vec3.distance(camPos, pos);
+        const scaleFactor = dist * 0.15;
+
+        const syncPart = (actor: AActor | null, localOffset: vec3, localRotEuler?: vec3, scaleMultiplier: number = 1.0) => {
           if (!actor?.rootComponent) return;
           vec3.copy(actor.rootComponent.relativeLocation, pos);
+
+          const finalOffset = vec3.create();
+          // Apply scaleFactor to offset so it stays at the visual tip
+          vec3.set(finalOffset, localOffset[0] * scaleFactor, localOffset[1] * scaleFactor, localOffset[2] * scaleFactor);
+
           const worldOffset = vec3.create();
-          vec3.transformQuat(worldOffset, localOffset, rot);
+          if (this.transformSpace === 'local') {
+            vec3.transformQuat(worldOffset, finalOffset, rot);
+          } else {
+            vec3.copy(worldOffset, finalOffset);
+          }
           vec3.add(actor.rootComponent.relativeLocation, actor.rootComponent.relativeLocation, worldOffset);
 
           if (localRotEuler) {
             const localQuat = quat.create();
             quat.fromEuler(localQuat, localRotEuler[0], localRotEuler[1], localRotEuler[2]);
-            quat.multiply(actor.rootComponent.relativeRotation, rot, localQuat);
+            if (this.transformSpace === 'local') {
+              // Apply actor's rotation first, then the local rotation
+              quat.multiply(actor.rootComponent.relativeRotation, rot, localQuat);
+            } else {
+              // Only apply local rotation in global space
+              quat.copy(actor.rootComponent.relativeRotation, localQuat);
+            }
           } else {
-            quat.copy(actor.rootComponent.relativeRotation, rot);
+            if (this.transformSpace === 'local') {
+              // In local space, gizmo aligns with actor's rotation
+              quat.copy(actor.rootComponent.relativeRotation, rot);
+            } else {
+              // In global space, gizmo is always identity rotation
+              quat.identity(actor.rootComponent.relativeRotation);
+            }
           }
+
+          // Apply constant size to component scale (with multiplier)
+          const finalScale = scaleFactor * scaleMultiplier;
+          vec3.set(actor.rootComponent.relativeScale, finalScale, finalScale, finalScale);
         };
 
-        // Sync Axes
-        syncPart(this.gizmoX, vec3.fromValues(1.0, 0, 0));
-        syncPart(this.gizmoY, vec3.fromValues(0, 1.0, 0));
-        syncPart(this.gizmoZ, vec3.fromValues(0, 0, 1.0));
+        // Sync Axes (Lines start at 0,0,0)
+        syncPart(this.gizmoX, vec3.fromValues(0, 0, 0), vec3.fromValues(0, 0, -90));
+        syncPart(this.gizmoY, vec3.fromValues(0, 0, 0));
+        syncPart(this.gizmoZ, vec3.fromValues(0, 0, 0), vec3.fromValues(90, 0, 0));
 
-        // Sync Arrow Heads
-        syncPart(this.arrowHeadX, vec3.fromValues(2.0, 0, 0), vec3.fromValues(0, 0, -90));
-        syncPart(this.arrowHeadY, vec3.fromValues(0, 2.0, 0)); // Points +Y already
-        syncPart(this.arrowHeadZ, vec3.fromValues(0, 0, 2.0), vec3.fromValues(90, 0, 0));
+        // Sync Arrow Heads (Positioned at 1.0 offset)
+        const tipMultiplier = this.currentTransformMode === 'scale' ? 0.05 : 1.0;
+        syncPart(this.arrowHeadX, vec3.fromValues(1.0, 0, 0), vec3.fromValues(0, 0, -90), tipMultiplier);
+        syncPart(this.arrowHeadY, vec3.fromValues(0, 1.0, 0), undefined, tipMultiplier);
+        syncPart(this.arrowHeadZ, vec3.fromValues(0, 0, 1.0), vec3.fromValues(90, 0, 0), tipMultiplier);
       } else {
         this.hideGizmos();
       }

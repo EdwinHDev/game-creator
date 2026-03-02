@@ -5,6 +5,7 @@ import { AActor, UMeshComponent, vec3 } from '@game-creator/engine';
  */
 export class TopBar extends HTMLElement {
   public engine: any;
+  private currentTransformSpace: 'global' | 'local' = 'global';
 
   constructor() {
     super();
@@ -23,6 +24,8 @@ export class TopBar extends HTMLElement {
           <button id="btn-rotate" class="btn-tool">Rotate</button>
           <button id="btn-scale" class="btn-tool">Scale</button>
         </div>
+        <div class="divider"></div>
+        <button id="btn-toggle-space" class="btn-primary">Space: Global</button>
         <div class="divider"></div>
         <button id="btn-add-cube" class="btn-primary">+ Add Cube</button>
       </div>
@@ -107,6 +110,18 @@ export class TopBar extends HTMLElement {
     const addBtn = this.querySelector('#btn-add-cube');
     if (addBtn) {
       addBtn.addEventListener('click', () => this.spawnCube());
+    }
+
+    const spaceBtn = this.querySelector('#btn-toggle-space') as HTMLButtonElement;
+    if (spaceBtn) {
+      spaceBtn.addEventListener('click', () => {
+        this.currentTransformSpace = this.currentTransformSpace === 'global' ? 'local' : 'global';
+        spaceBtn.textContent = `Space: ${this.currentTransformSpace.charAt(0).toUpperCase() + this.currentTransformSpace.slice(1)}`;
+
+        import('@game-creator/engine').then(({ EventBus }) => {
+          EventBus.emit('OnTransformSpaceChanged', this.currentTransformSpace);
+        });
+      });
     }
   }
 

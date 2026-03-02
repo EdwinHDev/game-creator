@@ -16,6 +16,8 @@ export class Renderer {
   private trianglePipeline: GPURenderPipeline | null = null;
   private linePipeline: GPURenderPipeline | null = null;
   private outlinePipeline: GPURenderPipeline | null = null;
+  private gizmoOverlayPipeline: GPURenderPipeline | null = null;
+  private gizmoTriangleOverlayPipeline: GPURenderPipeline | null = null;
 
   // Cache for uniform buffers to avoid re-allocation every frame
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -121,22 +123,22 @@ export class Renderer {
       fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
           let N = normalize(in.normal);
           let L = normalize(-scene.lightDirection.xyz);
-          let diffuse = max(dot(N, L), 0.1);
+          let diffuse = max(dot(N, L), 0.0);
           
           // Shadow Calculation (Perspective divide & map to 0-1)
           let projCoords = in.fragPosLightSpace.xyz / in.fragPosLightSpace.w;
           let flipY = vec2<f32>(projCoords.x, -projCoords.y); 
           let uv = flipY * 0.5 + 0.5;
           
-          // 1. Unconditional sampling to avoid GPU control flow errors
+          // 1. Unconditional sampling
           var shadow = textureSampleCompare(shadowMap, shadowSampler, uv, projCoords.z - 0.005);
           
-          // 2. Cancel shadow if coordinates are outside light projection
-          let out_of_bounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || projCoords.z > 1.0 || projCoords.z < 0.0;
-          if (out_of_bounds) {
+          // 2. Out of bounds handling
+          if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || projCoords.z > 1.0 || projCoords.z < 0.0) {
               shadow = 1.0; 
           }
 
+          // World Lighting: Ambient (0.2) + Diffuse (Directional * Shadow)
           let lighting = (0.2 + (diffuse * shadow)) * scene.lightColor.rgb;
           return vec4<f32>(uniforms.baseColor.rgb * lighting, uniforms.baseColor.a);
       }
@@ -369,7 +371,83 @@ export class Renderer {
       },
     });
 
-    Logger.info("WebGPU Renderer initialized with Selection Outlines support.");
+    // --- Phase 17.8: Gizmo Overlay Pipeline (No Depth Test) ---
+    const gizmoShaderCode = `
+      struct Uniforms {
+          mvpMatrix: mat4x4<f32>,
+          color: vec4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+      struct VertexOut {
+          @builtin(position) pos: vec4<f32>,
+          @location(0) color: vec4<f32>,
+      }
+
+      @vertex
+      fn vs_main(@location(0) pos: vec3<f32>, @location(1) color: vec3<f32>) -> VertexOut {
+          var out: VertexOut;
+          out.pos = uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
+          out.color = vec4<f32>(color, 1.0); // Directly return injected vertex color
+          return out;
+      }
+
+      @fragment
+      fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+          return in.color; // Strictly Unlit: Ignora la luz ambiental y de escena
+      }
+    `;
+    const gizmoShaderModule = this.device.createShaderModule({ code: gizmoShaderCode });
+
+    this.gizmoOverlayPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: gizmoShaderModule,
+        entryPoint: 'vs_main',
+        buffers: [{
+          arrayStride: 24,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' }
+          ],
+        }],
+      },
+      fragment: {
+        module: gizmoShaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }],
+      },
+      primitive: {
+        topology: 'line-list',
+      },
+      // Removed depthStencil for absolute X-Ray visibility in depth-less pass
+    });
+
+    this.gizmoTriangleOverlayPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: gizmoShaderModule,
+        entryPoint: 'vs_main',
+        buffers: [{
+          arrayStride: 24,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x3' },
+            { shaderLocation: 1, offset: 12, format: 'float32x3' }
+          ],
+        }],
+      },
+      fragment: {
+        module: gizmoShaderModule,
+        entryPoint: 'fs_main',
+        targets: [{ format: this.format }],
+      },
+      primitive: {
+        topology: 'triangle-list',
+      },
+      // No DepthStencil block here to allow it to be used in depth-less pass
+    });
+
+    Logger.info("WebGPU Renderer initialized with Selection Outlines and Gizmo Overlay support.");
   }
 
   /**
@@ -536,8 +614,8 @@ export class Renderer {
 
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
-          // If selected, draw outline FIRST (or second, depending on depth settings, 
-          // but inverted hull usually works well if drawn after or with depth testing)
+          if (component.isGizmo) continue; // Draw gizmos in a separate pass
+
           if (isSelected && component.topology === 'triangle-list') {
             this.drawOutline(passEncoder, component, viewProjMatrix);
           }
@@ -547,6 +625,30 @@ export class Renderer {
     }
 
     passEncoder.end();
+
+    // 7. NEW: Gizmo Overlay Pass (Separate Pass, NO Depth Stencil for absolute X-Ray)
+    const gizmoPassEncoder = mainEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        clearValue: { r: 0, g: 0, b: 0, a: 0 }, // Not actually used by loadOp
+        loadOp: 'load',
+        storeOp: 'store',
+      }],
+      // NO Depth Stencil Attachment = Absolute X-Ray dominance
+    });
+
+    for (const actor of world.actors) {
+      for (const component of actor.components) {
+        if (component instanceof UMeshComponent && component.vertexBuffer) {
+          if (component.isGizmo) {
+            this.drawMesh(gizmoPassEncoder, component, viewProjMatrix);
+          }
+        }
+      }
+    }
+    gizmoPassEncoder.end();
+
+    // Finally submit both passes
     this.device.queue.submit([mainEncoder.finish()]);
   }
 
@@ -594,8 +696,14 @@ export class Renderer {
   private drawMesh(passEncoder: GPURenderPassEncoder, mesh: UMeshComponent, viewProjMatrix: mat4): void {
     if (!this.device) return;
 
-    // Select the correct pipeline for this mesh
-    const pipeline = mesh.topology === 'line-list' ? this.linePipeline : this.trianglePipeline;
+    // Phase 17.9.7: Gizmos use overlay flags
+    const isGizmo = mesh.isGizmo;
+    let pipeline = mesh.topology === 'line-list' ? this.linePipeline : this.trianglePipeline;
+
+    if (isGizmo) {
+      pipeline = mesh.topology === 'line-list' ? this.gizmoOverlayPipeline : this.gizmoTriangleOverlayPipeline;
+    }
+
     if (!pipeline) return;
 
     passEncoder.setPipeline(pipeline);
@@ -605,11 +713,10 @@ export class Renderer {
 
     // 2. Calculate MVP
     const mvpMatrix = mat4.create();
-    mat4.multiply(mvpMatrix, viewProjMatrix, mesh.getTransformMatrix());
+    mat4.multiply(mvpMatrix, viewProjMatrix, modelMatrix);
 
     // 3. Update or Create Uniform Buffer
-    const isLineList = mesh.topology === 'line-list';
-    const bufferSize = isLineList ? 64 : 144; // MVP (64) + Model (64) + Color (16)
+    const bufferSize = isGizmo ? 128 : (mesh.topology === 'line-list' ? 64 : 144);
 
     let uniformBuffer = this.uniformBuffers.get(mesh.id);
     if (!uniformBuffer) {
@@ -623,8 +730,10 @@ export class Renderer {
     // 4. Populate Buffer
     this.device.queue.writeBuffer(uniformBuffer, 0, mvpMatrix as any);
 
-    // Write Model Matrix and Color for triangle meshes (Lighting needs world space)
-    if (!isLineList) {
+    if (isGizmo) {
+      const color = mesh.material ? mesh.material.baseColor : new Float32Array([1, 1, 1, 1]);
+      this.device.queue.writeBuffer(uniformBuffer, 64, color as any);
+    } else if (mesh.topology === 'triangle-list') {
       this.device.queue.writeBuffer(uniformBuffer, 64, modelMatrix as any);
       const color = mesh.material ? mesh.material.baseColor : new Float32Array([1, 1, 1, 1]);
       this.device.queue.writeBuffer(uniformBuffer, 128, color as any);
