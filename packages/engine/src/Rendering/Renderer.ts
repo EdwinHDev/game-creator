@@ -166,7 +166,7 @@ export class Renderer {
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
     });
 
-    this.sceneUniformBuffer = this.device.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.sceneUniformBuffer = this.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.trianglePipeline.getBindGroupLayout(1),
       entries: [
@@ -239,12 +239,17 @@ export class Renderer {
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
     mat4.multiply(lightViewProj, lightProj, lightView);
 
-    const sceneData = new Float32Array(32); // Expanded (Phase 27.2/27.3) for 128-byte alignment
+    const sceneData = new Float32Array(48); // Expanded (Phase 28) for 192-byte alignment (invViewProj)
     sceneData.set([...lightDir, 0], 0);
     sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 4);
     sceneData.set(lightViewProj as any, 8);
     const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
     sceneData.set([...camPos, 1.0], 24);
+
+    const invViewProj = mat4.create();
+    mat4.invert(invViewProj, viewProjMatrix);
+    sceneData.set(invViewProj as any, 28);
+
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
     return {

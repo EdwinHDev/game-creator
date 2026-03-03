@@ -3,6 +3,7 @@ struct SceneUniforms {
     lightColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
     cameraPosition: vec4<f32>,
+    invViewProj: mat4x4<f32>,
 }
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 
@@ -73,6 +74,30 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         bottomColor = vec3<f32>(0.0, 0.0, 0.2);
     }
 
-    let finalColor = mix(topColor, bottomColor, in.uv.y);
+    var finalColor = mix(topColor, bottomColor, in.uv.y);
+    
+    // Phase 28: Fake Sun Bloom (Ray Marching Far Plane)
+    // 1. Calculate World Ray
+    let ndcX = in.uv.x * 2.0 - 1.0;
+    let ndcY = -(in.uv.y * 2.0 - 1.0); // Flip Y for WebGPU NDC
+    let ndcPos = vec4<f32>(ndcX, ndcY, 1.0, 1.0);
+    
+    var worldPosHover = scene.invViewProj * ndcPos;
+    worldPosHover = worldPosHover / worldPosHover.w;
+    
+    let V = normalize(worldPosHover.xyz - scene.cameraPosition.xyz);
+    let L = normalize(-scene.lightDirection.xyz);
+    
+    // 2. Halo logic
+    let dotVL = max(dot(V, L), 0.0);
+    let bloomIntensity = pow(dotVL, 400.0) * 2.0; // Soft halo
+    let sunDisk = pow(dotVL, 2000.0) * 10.0;     // Core disk
+    
+    let sunColor = vec3<f32>(1.0, 0.95, 0.8) * scene.lightColor.rgb;
+    finalColor = finalColor + (bloomIntensity + sunDisk) * sunColor;
+
+    // HDR Tonemapping for sky
+    finalColor = finalColor / (finalColor + vec3<f32>(1.0));
+
     return vec4<f32>(finalColor, 1.0);
 }

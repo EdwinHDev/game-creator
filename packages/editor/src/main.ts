@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus, UMaterial } from '@game-creator/engine';
 import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
@@ -31,6 +31,20 @@ async function initEngine() {
     gridActor.rootComponent = gridMesh;
     gridMesh.createGrid(engine.getRenderer().getDevice()!);
     // -----------------------------
+
+    // --- Phase 28: Ground Platform ---
+    const platformActor = world.spawnActor(AActor, 'Platform', false);
+    const platformMesh = platformActor.addComponent(UMeshComponent);
+    platformActor.rootComponent = platformMesh;
+    vec3.set(platformMesh.relativeLocation, 0, -0.25, 0); // Directly underneath grid
+    vec3.set(platformMesh.relativeScale, 20, 0.5, 20); // Wide platform
+    const mat = new UMaterial('PlatformMat');
+    mat.baseColor = new Float32Array([0.2, 0.2, 0.2, 1.0]);
+    mat.roughness = 0.1;
+    mat.metallic = 0.2;
+    platformMesh.material = mat;
+    platformMesh.createBox(engine.getRenderer().getDevice()!);
+    // ---------------------------------
 
     // --- Phase 10: Editor Camera Controller ---
     new EditorCameraController(canvas, cameraActor);

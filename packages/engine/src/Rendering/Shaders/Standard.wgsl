@@ -12,6 +12,7 @@ struct SceneUniforms {
     lightColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
     cameraPosition: vec4<f32>,
+    invViewProj: mat4x4<f32>,
 }
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
@@ -20,28 +21,29 @@ struct SceneUniforms {
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
-    @location(1) shadowPos: vec4<f32>,
-    @location(2) worldPos: vec3<f32>,
+    @location(1) worldPos: vec3<f32>,
+    @location(2) shadowPos: vec4<f32>,
 }
 
 const PI: f32 = 3.14159265359;
 
 @vertex
 fn vs_main(
-    @location(0) pos: vec3<f32>,
+    @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>
 ) -> VertexOut {
+    let worldPosVec4 = uniforms.modelMatrix * vec4<f32>(position, 1.0);
+    
     var out: VertexOut;
-    let worldPos4 = uniforms.modelMatrix * vec4<f32>(pos, 1.0);
-    out.worldPos = worldPos4.xyz;
-    out.pos = uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
-    
-    out.normal = normalize((uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz);
-    out.shadowPos = scene.lightViewProj * worldPos4;
-    
+    out.pos = uniforms.mvpMatrix * vec4<f32>(position, 1.0);
+    out.worldPos = worldPosVec4.xyz;
+    // We treat normal transformation simply for now. Ideally use inverse transpose of modelMatrix.
+    out.normal = (uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz;
+    out.shadowPos = scene.lightViewProj * worldPosVec4;
     return out;
 }
 
+// PBR Helper Functions
 fn DistributionGGX(N: vec3<f32>, H: vec3<f32>, roughness: f32) -> f32 {
     let a = roughness * roughness;
     let a2 = a * a;
@@ -84,7 +86,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // Cook-Torrance PBR
     var F0 = vec3<f32>(0.04);
     // Phase 27: Force white sun reflections for metals instead of tinting by baseColor
-    F0 = mix(F0, vec3<f32>(1.0), uniforms.metallic);
+    // Phase 28: Using correct ambient F0 for metals
+    F0 = mix(F0, uniforms.baseColor.rgb, uniforms.metallic);
 
     let NDF = DistributionGGX(N, H, uniforms.roughness);
     let G = GeometrySmith(N, V, L, uniforms.roughness);
@@ -138,12 +141,14 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // Only apply sun disk if we have line of sight from the sun
     let sunDisk = sunDiskIntensity * scene.lightColor.rgb * shadowVisibility;
 
+    // Phase 28: Energy Conservation Polish
     // 2. Ambient base reflection (Fresnel injected with sky color)
-    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), vec3<f32>(0.04));
+    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
     let ambientReflection = F_ambient * skyColor * 0.5; // Scaled down for fake IBL
 
-    // The core ambient illumination
-    let ambient = hemiLight * uniforms.baseColor.rgb + ambientReflection;
+    // The core ambient illumination (Metals have 0 diffuse ambient)
+    let ambientDiffuse = hemiLight * uniforms.baseColor.rgb * (1.0 - uniforms.metallic);
+    let ambient = ambientDiffuse + ambientReflection;
 
     let color = ambient + directLighting + sunDisk;
 
