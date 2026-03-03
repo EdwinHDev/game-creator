@@ -340,11 +340,14 @@ export class Renderer {
     const mvp = mat4.create();
     const model = component.getTransformMatrix();
     mat4.multiply(mvp, viewProj, model);
-    const buffer = this.getOrCreateUniformBuffer(component.id, 144);
-    const data = new Float32Array(36);
+    const buffer = this.getOrCreateUniformBuffer(component.id, 160);
+    const data = new Float32Array(40);
     data.set(mvp as any, 0);
     data.set(model as any, 16);
     data.set(component.material?.baseColor || [1, 1, 1, 1], 32);
+    data[36] = component.material?.roughness ?? 0.5;
+    data[37] = component.material?.metallic ?? 0.0;
+    // data[38], data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
     const bindGroup = this.getOrCreateBindGroup(component.id, this.trianglePipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
     pass.setPipeline(this.trianglePipeline);

@@ -168,7 +168,7 @@ export class DetailsPanel extends HTMLElement {
       <div style="margin-bottom: 8px;">
         <label>Intensity</label>
         <div style="display: flex; gap: 8px; align-items: center;">
-          <input type="range" id="light-intensity-range" min="0" max="5" step="0.1" value="${light.intensity}" style="flex: 1;">
+          <input type="range" id="light-intensity-range" min="0" max="20" step="0.1" value="${light.intensity}" style="flex: 1;">
           <input type="number" id="light-intensity-num" step="0.1" value="${light.intensity}" style="width: 50px;">
         </div>
       </div>
@@ -225,8 +225,24 @@ export class DetailsPanel extends HTMLElement {
     const group = document.createElement('div');
     group.className = 'input-group';
     group.innerHTML = `
-      <label>Base Color</label>
-      <input type="color" id="mat-color" value="${this.rgbToHex(material.baseColor)}">
+      <div style="margin-bottom: 8px;">
+        <label>Base Color</label>
+        <input type="color" id="mat-color" value="${this.rgbToHex(material.baseColor)}">
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label>Roughness</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="range" id="mat-roughness-range" min="0" max="1" step="0.01" value="${material.roughness}" style="flex: 1;">
+          <input type="number" id="mat-roughness-num" min="0" max="1" step="0.01" value="${material.roughness}" style="width: 50px;">
+        </div>
+      </div>
+      <div style="margin-bottom: 8px;">
+        <label>Metallic</label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="range" id="mat-metallic-range" min="0" max="1" step="0.01" value="${material.metallic}" style="flex: 1;">
+          <input type="number" id="mat-metallic-num" min="0" max="1" step="0.01" value="${material.metallic}" style="width: 50px;">
+        </div>
+      </div>
     `;
     section.appendChild(group);
     this.appendChild(section);
@@ -238,6 +254,30 @@ export class DetailsPanel extends HTMLElement {
         this.hexToRgb(hex, material.baseColor);
       });
     }
+
+    const roughRange = group.querySelector('#mat-roughness-range') as HTMLInputElement;
+    const roughNum = group.querySelector('#mat-roughness-num') as HTMLInputElement;
+    const metalRange = group.querySelector('#mat-metallic-range') as HTMLInputElement;
+    const metalNum = group.querySelector('#mat-metallic-num') as HTMLInputElement;
+
+    const updateRoughness = (val: string) => {
+      const v = parseFloat(val) || 0;
+      material.roughness = v;
+      roughRange.value = v.toString();
+      roughNum.value = v.toString();
+    };
+
+    const updateMetallic = (val: string) => {
+      const v = parseFloat(val) || 0;
+      material.metallic = v;
+      metalRange.value = v.toString();
+      metalNum.value = v.toString();
+    };
+
+    roughRange.addEventListener('input', (e) => updateRoughness((e.target as HTMLInputElement).value));
+    roughNum.addEventListener('input', (e) => updateRoughness((e.target as HTMLInputElement).value));
+    metalRange.addEventListener('input', (e) => updateMetallic((e.target as HTMLInputElement).value));
+    metalNum.addEventListener('input', (e) => updateMetallic((e.target as HTMLInputElement).value));
   }
 
   private rgbToHex(rgba: Float32Array): string {
