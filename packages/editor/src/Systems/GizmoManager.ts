@@ -286,12 +286,16 @@ export class GizmoManager {
         this.update();
       }
     } else if (this.isDraggingSolarHandle && this._selectedActor?.rootComponent) {
-      // Phase 20.4: Drag Solar Handle Logic
+      // Phase 20.4/26.2: Drag Solar Handle Logic
       const pos = this._selectedActor.rootComponent.relativeLocation;
-      const distance = 3.0; // Phase 21.3: Standardized distance
+      const distance = 3.0; // Standardized handle distance
       const targetPoint = vec3.create();
       vec3.scaleAndAdd(targetPoint, ray.origin, ray.direction, distance);
 
+      // We want the light's Local -Z (forward) to point AT the target.
+      // mat4.targetTo creates a view matrix where +Z points from Target to Eye.
+      // If we use targetPoint - pos as the target direction, the math natively creates a matrix 
+      // where +Z points backwards (pos - targetPoint), causing -Z to point perfectly at targetPoint!
       const direction = vec3.create();
       vec3.subtract(direction, targetPoint, pos);
       vec3.normalize(direction, direction);

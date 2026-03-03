@@ -12,6 +12,7 @@ import gizmoShader from './Shaders/Gizmo.wgsl?raw';
 import billboardShader from './Shaders/Billboard.wgsl?raw';
 import gridShader from './Shaders/Grid.wgsl?raw';
 import outlineShader from './Shaders/Outline.wgsl?raw';
+import skyShader from './Shaders/Sky.wgsl?raw';
 
 /**
  * Data needed for a single frame of rendering.
@@ -37,6 +38,7 @@ export class Renderer {
   private depthTexture: GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
 
+  private skyPipeline: GPURenderPipeline | null = null;
   private trianglePipeline: GPURenderPipeline | null = null;
   private linePipeline: GPURenderPipeline | null = null;
   private outlinePipeline: GPURenderPipeline | null = null;
@@ -51,6 +53,7 @@ export class Renderer {
 
   private sceneUniformBuffer: GPUBuffer | null = null;
   private sceneBindGroup: GPUBindGroup | null = null;
+  private skyBindGroup: GPUBindGroup | null = null;
 
   private shadowPipeline: GPURenderPipeline | null = null;
   private shadowTexture: GPUTexture | null = null;
@@ -82,6 +85,7 @@ export class Renderer {
     const billboardModule = this.device.createShaderModule({ code: billboardShader });
     const gridModule = this.device.createShaderModule({ code: gridShader });
     const outlineModule = this.device.createShaderModule({ code: outlineShader });
+    const skyModule = this.device.createShaderModule({ code: skyShader });
 
     this.shadowTexture = this.device.createTexture({
       size: [2048, 2048], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
@@ -94,6 +98,13 @@ export class Renderer {
       vertex: { module: shadowModule, entryPoint: 'vs_main', buffers: vertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
+    });
+
+    this.skyPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: skyModule, entryPoint: 'vs_main' },
+      fragment: { module: skyModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      primitive: { topology: 'triangle-list' },
     });
 
     this.trianglePipeline = this.device.createRenderPipeline({
@@ -155,7 +166,7 @@ export class Renderer {
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
     });
 
-    this.sceneUniformBuffer = this.device.createBuffer({ size: 96, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.sceneUniformBuffer = this.device.createBuffer({ size: 128, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.trianglePipeline.getBindGroupLayout(1),
       entries: [
@@ -163,6 +174,13 @@ export class Renderer {
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
       ],
+    });
+
+    this.skyBindGroup = this.device.createBindGroup({
+      layout: this.skyPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.sceneUniformBuffer } }
+      ]
     });
 
     const quadData = new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]);
@@ -178,6 +196,7 @@ export class Renderer {
     if (!frameData) return;
 
     this.executeShadowPass(frameData);
+    this.executeSkyPass(frameData);
     this.executeMainPass(frameData);
     this.executeGizmoPass(frameData);
     this.submitFrame(frameData.commandEncoder);
@@ -220,10 +239,12 @@ export class Renderer {
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
     mat4.multiply(lightViewProj, lightProj, lightView);
 
-    const sceneData = new Float32Array(24);
+    const sceneData = new Float32Array(32); // Expanded (Phase 27.2/27.3) for 128-byte alignment
     sceneData.set([...lightDir, 0], 0);
     sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 4);
     sceneData.set(lightViewProj as any, 8);
+    const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
+    sceneData.set([...camPos, 1.0], 24);
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
     return {
@@ -270,6 +291,20 @@ export class Renderer {
     pass.end();
   }
 
+  private executeSkyPass(frameData: FrameData): void {
+    if (!this.skyPipeline || !this.skyBindGroup) return;
+    const { commandEncoder, textureView } = frameData;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{ view: textureView, clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }]
+    });
+
+    pass.setPipeline(this.skyPipeline);
+    pass.setBindGroup(0, this.skyBindGroup);
+    pass.draw(3);
+    pass.end();
+  }
+
   private executeMainPass(frameData: FrameData): void {
     const { commandEncoder, textureView, world, viewProjMatrix } = frameData;
     const width = this.context!.getCurrentTexture().width;
@@ -282,7 +317,7 @@ export class Renderer {
     }
 
     const pass = commandEncoder.beginRenderPass({
-      colorAttachments: [{ view: textureView, clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }],
+      colorAttachments: [{ view: textureView, loadOp: 'load', storeOp: 'store' }],
       depthStencilAttachment: { view: this.depthTextureView!, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
     });
 
@@ -345,7 +380,8 @@ export class Renderer {
     data.set(mvp as any, 0);
     data.set(model as any, 16);
     data.set(component.material?.baseColor || [1, 1, 1, 1], 32);
-    data[36] = component.material?.roughness ?? 0.5;
+    // Phase 27: Roughness floor to prevent division-by-zero in Cook-Torrance denominator
+    data[36] = Math.max(component.material?.roughness ?? 0.5, 0.002);
     data[37] = component.material?.metallic ?? 0.0;
     // data[38], data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);

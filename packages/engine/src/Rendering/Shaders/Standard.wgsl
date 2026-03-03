@@ -11,6 +11,7 @@ struct SceneUniforms {
     lightDirection: vec4<f32>,
     lightColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
+    cameraPosition: vec4<f32>,
 }
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
@@ -74,7 +75,7 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let cameraPos = vec3<f32>(0.0, 0.0, 0.0); // Simplified for now
+    let cameraPos = scene.cameraPosition.xyz;
     let N = normalize(in.normal);
     let V = normalize(cameraPos - in.worldPos);
     let L = normalize(-scene.lightDirection.xyz);
@@ -82,7 +83,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     // Cook-Torrance PBR
     var F0 = vec3<f32>(0.04);
-    F0 = mix(F0, uniforms.baseColor.rgb, uniforms.metallic);
+    // Phase 27: Force white sun reflections for metals instead of tinting by baseColor
+    F0 = mix(F0, vec3<f32>(1.0), uniforms.metallic);
 
     let NDF = DistributionGGX(N, H, uniforms.roughness);
     let G = GeometrySmith(N, V, L, uniforms.roughness);
@@ -103,17 +105,47 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let shadowVisibility = textureSampleCompare(shadowMap, shadowSampler, posUV, shadowCoords.z - 0.005);
 
     let NdotL = max(dot(N, L), 0.0);
-    // Phase 24.5: Massive Specular Boost (5.0) for high-impact glints
-    let directLighting = (kD * uniforms.baseColor.rgb / PI + specular * 5.0) * scene.lightColor.rgb * NdotL * shadowVisibility;
+    // Phase 27: Hyper-Intense Specular (20.0)
+    let directLighting = (kD * uniforms.baseColor.rgb / PI + specular * 20.0) * scene.lightColor.rgb * NdotL * shadowVisibility;
     
-    // Phase 24.6: Hemispheric Ambient Lighting
-    let skyColor = vec3<f32>(0.1, 0.2, 0.4);
-    let groundColor = vec3<f32>(0.1, 0.1, 0.1);
+    // Phase 26.1: Dynamic Sky IBL
+    let sunY = scene.lightDirection.y;
+    var skyColor: vec3<f32>;
+    let groundColor = vec3<f32>(0.1, 0.1, 0.1); // Fixed dark ground
+
+    if (sunY < -0.1) {
+        skyColor = vec3<f32>(0.1, 0.3, 0.8);
+    } else if (sunY < 0.3) {
+        let t = (sunY + 0.1) / 0.4;
+        skyColor = mix(vec3<f32>(0.1, 0.3, 0.8), vec3<f32>(0.4, 0.1, 0.5), t);
+    } else if (sunY < 0.6) {
+        let t = (sunY - 0.3) / 0.3;
+        skyColor = mix(vec3<f32>(0.4, 0.1, 0.5), vec3<f32>(0.0, 0.0, 0.05), t);
+    } else {
+        skyColor = vec3<f32>(0.0, 0.0, 0.05);
+    }
+
     let upFactor = dot(N, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
     let hemiLight = mix(groundColor, skyColor, upFactor);
-    let ambient = hemiLight * uniforms.baseColor.rgb;
+    
+    // Phase 27.2: Fake Sun Disk & IBL Specular Simulation
+    let R = reflect(-V, N);
 
-    let color = ambient + directLighting;
+    // 1. Procedural Sun Disk
+    let dotSR = max(dot(R, L), 0.0); // R compared to the light direction (L)
+    let sunDiskIntensity = pow(dotSR, 2000.0) * 10.0;
+    
+    // Only apply sun disk if we have line of sight from the sun
+    let sunDisk = sunDiskIntensity * scene.lightColor.rgb * shadowVisibility;
+
+    // 2. Ambient base reflection (Fresnel injected with sky color)
+    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), vec3<f32>(0.04));
+    let ambientReflection = F_ambient * skyColor * 0.5; // Scaled down for fake IBL
+
+    // The core ambient illumination
+    let ambient = hemiLight * uniforms.baseColor.rgb + ambientReflection;
+
+    let color = ambient + directLighting + sunDisk;
 
     // HDR / Tonemapping (simplified)
     let finalColor = color / (color + vec3<f32>(1.0));

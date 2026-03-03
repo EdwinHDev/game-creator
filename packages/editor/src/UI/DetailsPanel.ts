@@ -168,7 +168,7 @@ export class DetailsPanel extends HTMLElement {
       <div style="margin-bottom: 8px;">
         <label>Intensity</label>
         <div style="display: flex; gap: 8px; align-items: center;">
-          <input type="range" id="light-intensity-range" min="0" max="20" step="0.1" value="${light.intensity}" style="flex: 1;">
+          <input type="range" id="light-intensity-range" min="0" max="50" step="0.1" value="${light.intensity}" style="flex: 1;">
           <input type="number" id="light-intensity-num" step="0.1" value="${light.intensity}" style="width: 50px;">
         </div>
       </div>
