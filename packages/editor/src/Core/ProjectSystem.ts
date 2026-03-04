@@ -9,6 +9,7 @@ export class ProjectSystem {
   public static projectName: string = 'Untitled Project';
   public static hasUnsavedChanges: boolean = false;
   public static dirtyMaterials: Map<string, any> = new Map();
+  private static autoSaveInterval: any = null;
 
   public static markUnsaved() {
     if (!this.hasUnsavedChanges) {
@@ -26,6 +27,18 @@ export class ProjectSystem {
   public static markMaterialDirty(fileName: string, data: any) {
     this.dirtyMaterials.set(fileName, data);
     this.markUnsaved();
+  }
+
+  public static startAutoSave() {
+    if (this.autoSaveInterval) clearInterval(this.autoSaveInterval);
+
+    // 10 minutes = 600,000 milisegundos
+    this.autoSaveInterval = setInterval(async () => {
+      if (this.hasUnsavedChanges && this.directoryHandle) {
+        EditorLogger.info("Iniciando Auto-Save de 10 minutos...");
+        EventBus.dispatch('RequestSaveProject', {});
+      }
+    }, 600000);
   }
 
   /**
@@ -59,6 +72,9 @@ export class ProjectSystem {
       UAssetManager.getInstance().reset(handle);
       EventBus.dispatch('PROJECT_LOADED', { handle: handle });
       EventBus.emit('RequestContentBrowserRefresh', {});
+
+      // Iniciar el auto-save (Phase 56)
+      this.startAutoSave();
 
       // 2. Base Structure Creation
       await handle.getDirectoryHandle('Assets', { create: true });
@@ -146,6 +162,7 @@ export class ProjectSystem {
 
       EditorLogger.info(`Project saved: ${this.projectName}`);
       this.clearUnsaved();
+      this.startAutoSave();
     } catch (error) {
       EditorLogger.error('Failed to save project:', error);
     }
@@ -222,6 +239,7 @@ export class ProjectSystem {
 
       EditorLogger.info(`Project loaded: ${this.projectName}`);
       this.clearUnsaved();
+      this.startAutoSave();
     } catch (error) {
       EditorLogger.error('Failed to load project:', error);
     }
@@ -315,6 +333,11 @@ export class ProjectSystem {
    * Loads material data (.mat) from Assets/Materials/
    */
   public static async loadMaterialData(fileName: string): Promise<any | null> {
+    // 1. CHEQUEO DE MEMORIA (Prioridad Absoluta - Phase 56)
+    if (this.dirtyMaterials.has(fileName)) {
+      return JSON.parse(JSON.stringify(this.dirtyMaterials.get(fileName)));
+    }
+
     if (!this.directoryHandle) return null;
 
     try {

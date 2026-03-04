@@ -44,6 +44,19 @@ export class TopBar extends HTMLElement {
           }
         }
       });
+
+      // Silent Auto-Save handler (Phase 56)
+      EventBus.on('RequestSaveProject', async () => {
+        if (this.engine) {
+          try {
+            await ProjectSystem.saveProject(this.engine.getWorld());
+            EditorLogger.info("Auto-Save completado silenciosamente.");
+            this.showToast("💾 Auto-guardado completado", "info");
+          } catch (e) {
+            EditorLogger.error("Fallo en el Auto-Save", e);
+          }
+        }
+      });
     });
   }
 
@@ -448,6 +461,41 @@ export class TopBar extends HTMLElement {
       EventBus.dispatch('OnActorSelected', newActor);
       EventBus.emit('OnWorldChanged', {});
     });
+  }
+
+  private showToast(message: string, type: 'success' | 'info' = 'info') {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.position = 'fixed';
+    toast.style.bottom = '20px';
+    toast.style.right = '20px';
+    toast.style.backgroundColor = type === 'success' ? '#2ecc71' : 'var(--accent-color)';
+    toast.style.color = 'white';
+    toast.style.padding = '10px 20px';
+    toast.style.borderRadius = '4px';
+    toast.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
+    toast.style.zIndex = '9999';
+    toast.style.fontSize = '12px';
+    toast.style.fontWeight = 'bold';
+    toast.style.pointerEvents = 'none'; // Para que no bloquee clics
+    toast.style.transition = 'opacity 0.3s ease-in-out, transform 0.3s ease-in-out';
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+
+    document.body.appendChild(toast);
+
+    // Animar entrada
+    requestAnimationFrame(() => {
+      toast.style.opacity = '1';
+      toast.style.transform = 'translateY(0)';
+    });
+
+    // Animar salida y eliminar
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(10px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000); // Desaparece después de 3 segundos
   }
 
   private setupStyles() {

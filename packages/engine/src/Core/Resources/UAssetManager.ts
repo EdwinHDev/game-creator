@@ -155,23 +155,30 @@ export class UAssetManager {
    * to be updated instantly in the viewport.
    */
   public async applyMaterialDataToCache(path: string, data: any, device: GPUDevice): Promise<void> {
-    const mat = this.materialCache.get(path);
-    if (mat) {
-      // Direct property update for real-time responsiveness
-      if (data.baseColor) mat.baseColor = new Float32Array(data.baseColor);
-      if (data.metallic !== undefined) mat.metallic = data.metallic;
-      if (data.roughness !== undefined) mat.roughness = data.roughness;
-
-      // Update texture paths (updateResources will handle the actual GPU loading)
-      if (data.textures) {
-        mat.albedoMapPath = data.textures.albedo || null;
-        mat.normalMapPath = data.textures.normal || null;
-        mat.roughnessMapPath = data.textures.roughness || null;
-      }
-
-      await mat.updateResources(device, this);
-      Logger.info(`UAssetManager: Real-time update applied to ${path}`);
+    let mat = this.materialCache.get(path);
+    if (!mat) {
+      // FIX (Phase 56): If material isn't in cache (e.g. brand new), create it
+      // so we don't "forget" the edits made just before assigning it to an actor.
+      const { UMaterial } = await import('../../Rendering/UMaterial');
+      mat = new UMaterial(data.name || 'NewMaterial');
+      this.materialCache.set(path, mat);
+      Logger.info(`UAssetManager: Created new material in cache for ${path}`);
     }
+
+    // Direct property update for real-time responsiveness
+    if (data.baseColor) mat.baseColor = new Float32Array(data.baseColor);
+    if (data.metallic !== undefined) mat.metallic = data.metallic;
+    if (data.roughness !== undefined) mat.roughness = data.roughness;
+
+    // Update texture paths (updateResources will handle the actual GPU loading)
+    if (data.textures) {
+      mat.albedoMapPath = data.textures.albedo || null;
+      mat.normalMapPath = data.textures.normal || null;
+      mat.roughnessMapPath = data.textures.roughness || null;
+    }
+
+    await mat.updateResources(device, this);
+    Logger.info(`UAssetManager: Real-time update applied to ${path}`);
   }
 
   /**
