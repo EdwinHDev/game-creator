@@ -125,8 +125,12 @@ export class GizmoManager {
     let closestDist = Infinity;
 
     if (this.currentTransformMode === 'rotate') {
-      const radius = 0.1 * scaleFactor;
-      const ringThreshold = 0.1 * scaleFactor;
+      // Phase 35.5.1: Synchronize hit radius with visual radius (1.1)
+      const baseRadius = 1.1; // Debe coincidir con el radio de createCircle
+      const radius = baseRadius * scaleFactor;
+
+      // Grosor del anillo de detección calibrado para que sea fácil clickear (aprox 10% del radio)
+      const ringThreshold = 0.12 * scaleFactor;
 
       for (const a of axes) {
         const planeNormal = vec3.create();
@@ -437,7 +441,7 @@ export class GizmoManager {
         if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05, color);
         else if (this.currentTransformMode === 'scale') {
           // Phase 34.5: Color support for Scaling Gizmo Box tips
-          mesh.createGizmoCube(device, 0.5, color);
+          mesh.createGizmoCube(device, 1.5, color);
           vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085);
         }
         if (mesh.material) {
