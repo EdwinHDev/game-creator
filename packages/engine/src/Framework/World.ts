@@ -91,4 +91,45 @@ export class World extends UObject {
       actor.tick(deltaTime);
     }
   }
+
+  /**
+   * Serializes the world and all its actors.
+   */
+  public serialize(): any {
+    return {
+      projectName: this.name,
+      actors: this.actors.filter(a => !a.isEditorOnly).map(a => a.serialize())
+    };
+  }
+
+  /**
+   * Deserializes the world from JSON data.
+   */
+  public async deserialize(jsonData: any): Promise<void> {
+    Logger.info("World Deserialization started");
+
+    // Clear current world (excluding editor-only actors if any persistent ones exist)
+    const actorsToDestroy = [...this.actors.filter(a => !a.isEditorOnly)];
+    for (const actor of actorsToDestroy) {
+      this.destroyActor(actor);
+    }
+
+    if (!jsonData.actors) return;
+
+    for (const actorData of jsonData.actors) {
+      // For Phase 1, we assume basic AActor class for all since we don't have a class registry yet
+      const actor = this.spawnActor(AActor, actorData.name);
+      await actor.deserialize(actorData);
+
+      // Re-create mesh if it had mesh component data
+      const meshData = actorData.components.find((c: any) => c.type === 'UMeshComponent');
+      if (meshData) {
+        // Note: Geometry creation (createBox etc) and device access 
+        // will be handled by the Editor/ProjectSystem after calling this
+        // to avoid passing GPUDevice deep into the Framework core if possible
+      }
+    }
+
+    Logger.info(`World Deserialized: ${this.actors.length} actors loaded`);
+  }
 }

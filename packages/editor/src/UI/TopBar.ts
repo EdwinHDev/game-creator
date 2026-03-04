@@ -1,4 +1,5 @@
 import { AActor, UMeshComponent, vec3 } from '@game-creator/engine';
+import { ProjectSystem } from '../Core/ProjectSystem';
 
 /**
  * TopBar Web Component with tools and spawning actions.
@@ -52,9 +53,9 @@ export class TopBar extends HTMLElement {
           <div class="dropdown">
             <button class="dropbtn">File</button>
             <div class="dropdown-content">
-              <a href="#">New Scene</a>
-              <a href="#">Save</a>
-              <a href="#">Export</a>
+              <a href="#" id="menu-new-project">New Project</a>
+              <a href="#" id="menu-open-project">Open Project</a>
+              <a href="#" id="menu-save-project">Save Project</a>
             </div>
           </div>
           <div class="dropdown">
@@ -369,6 +370,28 @@ export class TopBar extends HTMLElement {
         });
       });
     }
+
+    // Project Menu Listeners
+    const btnNew = this.querySelector('#menu-new-project');
+    const btnOpen = this.querySelector('#menu-open-project');
+    const btnSave = this.querySelector('#menu-save-project');
+
+    btnNew?.addEventListener('click', (e) => {
+      e.preventDefault();
+      ProjectSystem.createProject();
+    });
+
+    btnOpen?.addEventListener('click', (e) => {
+      e.preventDefault();
+      ProjectSystem.loadProject(this.engine);
+    });
+
+    btnSave?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.engine) {
+        ProjectSystem.saveProject(this.engine.getWorld());
+      }
+    });
   }
 
   private spawnPrimitive(type: string) {

@@ -62,4 +62,25 @@ export class USceneComponent extends UActorComponent {
     );
     return matrix;
   }
+
+  /**
+   * Serializes the component's transform data.
+   */
+  public serialize(): any {
+    return {
+      name: this.name,
+      relativeLocation: Array.from(this.relativeLocation),
+      relativeRotation: Array.from(this.relativeRotation),
+      relativeScale: Array.from(this.relativeScale)
+    };
+  }
+
+  /**
+   * Deserializes the component's transform data.
+   */
+  public deserialize(data: any): void {
+    if (data.relativeLocation) vec3.copy(this.relativeLocation, new Float32Array(data.relativeLocation));
+    if (data.relativeRotation) quat.copy(this.relativeRotation, new Float32Array(data.relativeRotation));
+    if (data.relativeScale) vec3.copy(this.relativeScale, new Float32Array(data.relativeScale));
+  }
 }

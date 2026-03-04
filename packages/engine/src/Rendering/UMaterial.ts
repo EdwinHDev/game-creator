@@ -33,6 +33,11 @@ export class UMaterial extends UObject {
   public roughnessTexture: GPUTexture | null = null;
   public normalTexture: GPUTexture | null = null;
 
+  /**
+   * Relative path to the texture asset (Phase 1).
+   */
+  public assetPath: string | null = null;
+
   constructor(name: string = 'Material') {
     super(name);
   }

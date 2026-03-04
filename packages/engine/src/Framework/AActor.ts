@@ -89,4 +89,65 @@ export class AActor extends UObject {
     this.components = [];
     this.rootComponent = null;
   }
+
+  /**
+   * Serializes the actor and its components.
+   */
+  public serialize(): any {
+    const serializedComponents = this.components.map(comp => {
+      const data: any = {
+        type: comp.constructor.name,
+        name: comp.name
+      };
+
+      if (comp instanceof USceneComponent) {
+        Object.assign(data, comp.serialize());
+      }
+
+      // Special case for MeshComponent to include material/mesh info
+      if (comp.constructor.name === 'UMeshComponent') {
+        const meshComp = comp as any;
+        data.material = {
+          assetPath: meshComp.material?.assetPath,
+          baseColor: meshComp.material ? Array.from(meshComp.material.baseColor) : null
+        };
+      }
+
+      return data;
+    });
+
+    return {
+      name: this.name,
+      components: serializedComponents
+    };
+  }
+
+  /**
+   * Deserializes the actor and its components.
+   */
+  public async deserialize(data: any): Promise<void> {
+    this.name = data.name;
+
+    // Components are often created in the constructor or manually added.
+    // For Phase 1, we assume the components are already there or need to be recreated.
+    // A more robust system would handle component mapping.
+    for (const compData of data.components) {
+      let component = this.components.find(c => c.constructor.name === compData.type && c.name === compData.name);
+
+      if (component instanceof USceneComponent) {
+        component.deserialize(compData);
+      }
+
+      // Handle mesh specifics if needed (like re-creating geometry)
+      if (compData.type === 'UMeshComponent' && component) {
+        const meshComp = component as any;
+        if (compData.material && meshComp.material) {
+          if (compData.material.baseColor) {
+            meshComp.material.baseColor.set(compData.material.baseColor);
+          }
+          // Texture loading would happen via ProjectSystem helper usually
+        }
+      }
+    }
+  }
 }

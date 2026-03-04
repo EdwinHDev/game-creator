@@ -435,6 +435,7 @@ export class UMeshComponent extends USceneComponent {
 
       // Link to appropriate UMaterial slot
       if (this.material) {
+        this.material.assetPath = url; // Store the relative path
         if (type === 'albedo') this.material.baseColorTexture = newTexture;
         else if (type === 'roughness') this.material.roughnessTexture = newTexture;
         else if (type === 'normal') this.material.normalTexture = newTexture;
