@@ -77,11 +77,12 @@ export class Renderer {
     this.context!.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
 
     const standardVertexBuffers: GPUVertexBufferLayout[] = [{
-      arrayStride: 32,
+      arrayStride: 48, // Phase 34: 48 bytes (Pos[12] + Normal[12] + UV[8] + Tangent[16])
       attributes: [
         { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
         { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
         { shaderLocation: 2, offset: 24, format: 'float32x2' }, // uv
+        { shaderLocation: 3, offset: 32, format: 'float32x4' }, // tangent
       ],
     }];
 

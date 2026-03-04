@@ -28,8 +28,8 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Generates a simple colored box matching the updated 32-byte stride format:
-   * [x, y, z, nx, ny, nz, u, v]
+   * Generates a simple colored box matching the updated 48-byte stride format:
+   * [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
    */
   public createBox(device: GPUDevice): void {
     this.topology = 'triangle-list';
@@ -38,41 +38,41 @@ export class UMeshComponent extends USceneComponent {
 
     // 24 vertices (4 per face)
     const vertices = new Float32Array([
-      // Front face (Z+) -> Normal: 0, 0, 1
-      -1, -1, 1, 0, 0, 1, 0, 1,
-      1, -1, 1, 0, 0, 1, 1, 1,
-      1, 1, 1, 0, 0, 1, 1, 0,
-      -1, 1, 1, 0, 0, 1, 0, 0,
+      // Front face (Z+) -> Normal: 0, 0, 1 | Tangent: 1, 0, 0, 1
+      -1, -1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1,
+      1, -1, 1, 0, 0, 1, 1, 1, 1, 0, 0, 1,
+      1, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+      -1, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
 
-      // Back face (Z-) -> Normal: 0, 0, -1
-      -1, -1, -1, 0, 0, -1, 1, 1,
-      -1, 1, -1, 0, 0, -1, 1, 0,
-      1, 1, -1, 0, 0, -1, 0, 0,
-      1, -1, -1, 0, 0, -1, 0, 1,
+      // Back face (Z-) -> Normal: 0, 0, -1 | Tangent: -1, 0, 0, 1
+      -1, -1, -1, 0, 0, -1, 1, 1, -1, 0, 0, 1,
+      -1, 1, -1, 0, 0, -1, 1, 0, -1, 0, 0, 1,
+      1, 1, -1, 0, 0, -1, 0, 0, -1, 0, 0, 1,
+      1, -1, -1, 0, 0, -1, 0, 1, -1, 0, 0, 1,
 
-      // Top face (Y+) -> Normal: 0, 1, 0
-      -1, 1, -1, 0, 1, 0, 0, 0,
-      -1, 1, 1, 0, 1, 0, 0, 1,
-      1, 1, 1, 0, 1, 0, 1, 1,
-      1, 1, -1, 0, 1, 0, 1, 0,
+      // Top face (Y+) -> Normal: 0, 1, 0 | Tangent: 1, 0, 0, 1
+      -1, 1, -1, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -1, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1,
+      1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 1,
+      1, 1, -1, 0, 1, 0, 1, 0, 1, 0, 0, 1,
 
-      // Bottom face (Y-) -> Normal: 0, -1, 0
-      -1, -1, -1, 0, -1, 0, 0, 1,
-      1, -1, -1, 0, -1, 0, 1, 1,
-      1, -1, 1, 0, -1, 0, 1, 0,
-      -1, -1, 1, 0, -1, 0, 0, 0,
+      // Bottom face (Y-) -> Normal: 0, -1, 0 | Tangent: 1, 0, 0, 1
+      -1, -1, -1, 0, -1, 0, 0, 1, 1, 0, 0, 1,
+      1, -1, -1, 0, -1, 0, 1, 1, 1, 0, 0, 1,
+      1, -1, 1, 0, -1, 0, 1, 0, 1, 0, 0, 1,
+      -1, -1, 1, 0, -1, 0, 0, 0, 1, 0, 0, 1,
 
-      // Right face (X+) -> Normal: 1, 0, 0
-      1, -1, -1, 1, 0, 0, 1, 1,
-      1, 1, -1, 1, 0, 0, 1, 0,
-      1, 1, 1, 1, 0, 0, 0, 0,
-      1, -1, 1, 1, 0, 0, 0, 1,
+      // Right face (X+) -> Normal: 1, 0, 0 | Tangent: 0, 0, -1, 1
+      1, -1, -1, 1, 0, 0, 1, 1, 0, 0, -1, 1,
+      1, 1, -1, 1, 0, 0, 1, 0, 0, 0, -1, 1,
+      1, 1, 1, 1, 0, 0, 0, 0, 0, 0, -1, 1,
+      1, -1, 1, 1, 0, 0, 0, 1, 0, 0, -1, 1,
 
-      // Left face (X-) -> Normal: -1, 0, 0
-      -1, -1, -1, -1, 0, 0, 0, 1,
-      -1, -1, 1, -1, 0, 0, 1, 1,
-      -1, 1, 1, -1, 0, 0, 1, 0,
-      -1, 1, -1, -1, 0, 0, 0, 0,
+      // Left face (X-) -> Normal: -1, 0, 0 | Tangent: 0, 0, 1, 1
+      -1, -1, -1, -1, 0, 0, 0, 1, 0, 0, 1, 1,
+      -1, -1, 1, -1, 0, 0, 1, 1, 0, 0, 1, 1,
+      -1, 1, 1, -1, 0, 0, 1, 0, 0, 0, 1, 1,
+      -1, 1, -1, -1, 0, 0, 0, 0, 0, 0, 1, 1,
     ]);
 
     // 36 indices (6 faces * 2 triangles * 3 vertices)
@@ -86,7 +86,8 @@ export class UMeshComponent extends USceneComponent {
     ]);
 
     this.indexCount = indices.length;
-    this.vertexCount = vertices.length / 8; // 8 floats per vertex
+    // Phase 34: 12 floats per vertex (48 bytes)
+    this.vertexCount = vertices.length / 12;
 
     // Create Vertex Buffer
     this.vertexBuffer = device.createBuffer({
@@ -170,17 +171,17 @@ export class UMeshComponent extends USceneComponent {
 
       // Line along X (Vertical-ish)
       const xColor = isCenter ? zAxisColor : grayColor;
-      vertices.push(linePos, 0, -halfSize, ...xColor);
-      vertices.push(linePos, 0, halfSize, ...xColor);
+      vertices.push(linePos, 0, -halfSize, ...xColor, 0, 0, 1, 0, 0, 1);
+      vertices.push(linePos, 0, halfSize, ...xColor, 0, 0, 1, 0, 0, 1);
 
       // Line along Z (Horizontal-ish)
       const zColor = isCenter ? xAxisColor : grayColor;
-      vertices.push(-halfSize, 0, linePos, ...zColor);
-      vertices.push(halfSize, 0, linePos, ...zColor);
+      vertices.push(-halfSize, 0, linePos, ...zColor, 0, 0, 1, 0, 0, 1);
+      vertices.push(halfSize, 0, linePos, ...zColor, 0, 0, 1, 0, 0, 1);
     }
 
     const vertexData = new Float32Array(vertices);
-    this.vertexCount = vertexData.length / 6;
+    this.vertexCount = vertexData.length / 12;
 
     this.vertexBuffer = device.createBuffer({
       size: vertexData.byteLength,
@@ -214,35 +215,35 @@ export class UMeshComponent extends USceneComponent {
 
     const vertices = new Float32Array([
       // Front Face
-      0, h, 0, ...nf,
-      -r, 0, r, ...nf,
-      r, 0, r, ...nf,
+      0, h, 0, ...nf, 0, 0, 1, 0, 0, 1,
+      -r, 0, r, ...nf, 0, 0, 1, 0, 0, 1,
+      r, 0, r, ...nf, 0, 0, 1, 0, 0, 1,
 
       // Back Face
-      0, h, 0, ...nb,
-      r, 0, -r, ...nb,
-      -r, 0, -r, ...nb,
+      0, h, 0, ...nb, 0, 0, 1, 0, 0, 1,
+      r, 0, -r, ...nb, 0, 0, 1, 0, 0, 1,
+      -r, 0, -r, ...nb, 0, 0, 1, 0, 0, 1,
 
       // Right Face
-      0, h, 0, ...nr,
-      r, 0, r, ...nr,
-      r, 0, -r, ...nr,
+      0, h, 0, ...nr, 0, 0, 1, 0, 0, 1,
+      r, 0, r, ...nr, 0, 0, 1, 0, 0, 1,
+      r, 0, -r, ...nr, 0, 0, 1, 0, 0, 1,
 
       // Left Face
-      0, h, 0, ...nl,
-      -r, 0, -r, ...nl,
-      -r, 0, r, ...nl,
+      0, h, 0, ...nl, 0, 0, 1, 0, 0, 1,
+      -r, 0, -r, ...nl, 0, 0, 1, 0, 0, 1,
+      -r, 0, r, ...nl, 0, 0, 1, 0, 0, 1,
 
       // Base
-      -r, 0, -r, 0, -1, 0,
-      r, 0, -r, 0, -1, 0,
-      r, 0, r, 0, -1, 0,
-      -r, 0, -r, 0, -1, 0,
-      r, 0, r, 0, -1, 0,
-      -r, 0, r, 0, -1, 0,
+      -r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      -r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      -r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
     ]);
 
-    this.vertexCount = 18;
+    this.vertexCount = vertices.length / 12; // Phase 34
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -263,11 +264,11 @@ export class UMeshComponent extends USceneComponent {
 
     const [r, g, b] = color;
     const vertices = new Float32Array([
-      0, 0, 0, r, g, b,
-      0, length, 0, r, g, b,
+      0, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, length, 0, r, g, b, 0, 0, 1, 0, 0, 1,
     ]);
 
-    this.vertexCount = 2;
+    this.vertexCount = vertices.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -289,24 +290,20 @@ export class UMeshComponent extends USceneComponent {
     const s = size;
     const [r, g, b] = color;
     const vertices = new Float32Array([
-      0, s, 0, r, g, b,
-      s, 0, 0, r, g, b,
+      0, s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
 
-      s, 0, 0, r, g, b,
-      0, -s, 0, r, g, b,
+      s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, -s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
 
-      0, -s, 0, r, g, b,
-      -s, 0, 0, r, g, b,
+      0, -s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
 
-      -s, 0, 0, r, g, b,
-      0, s, 0, r, g, b,
-
-      // Vertical pass if we want it to look 3D-ish but flat
-      // 0, 0, s,   0, 1, 0,
-      // 0, 0, -s,  0, 1, 0,
+      -s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
     ]);
 
-    this.vertexCount = 8;
+    this.vertexCount = vertices.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -327,20 +324,20 @@ export class UMeshComponent extends USceneComponent {
 
     const s = size * 0.5;
     const vertices = new Float32Array([
-      -s, s, 0, 0, 1, 0,
-      s, s, 0, 0, 1, 0,
+      -s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
 
-      s, s, 0, 0, 1, 0,
-      s, -s, 0, 0, 1, 0,
+      s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
 
-      s, -s, 0, 0, 1, 0,
-      -s, -s, 0, 0, 1, 0,
+      s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
 
-      -s, -s, 0, 0, 1, 0,
-      -s, s, 0, 0, 1, 0,
+      -s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
     ]);
 
-    this.vertexCount = 8;
+    this.vertexCount = vertices.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -360,7 +357,8 @@ export class UMeshComponent extends USceneComponent {
     this.topology = 'line-list';
 
     const [r, g, b] = color;
-    const vertices = new Float32Array(segments * 2 * 6); // 2 vertices per segment * 6 floats
+    // 2 vertices per segment * 12 floats (48 bytes)
+    const vertices = new Float32Array(segments * 2 * 12);
     for (let i = 0; i < segments; i++) {
       const angle1 = (i / segments) * Math.PI * 2;
       const angle2 = ((i + 1) / segments) * Math.PI * 2;
@@ -378,16 +376,18 @@ export class UMeshComponent extends USceneComponent {
         x2 = Math.cos(angle2) * radius; y2 = Math.sin(angle2) * radius; z2 = 0;
       }
 
-      const off = i * 12;
+      const off = i * 24;
       // Vert 1
       vertices[off + 0] = x1; vertices[off + 1] = y1; vertices[off + 2] = z1;
       vertices[off + 3] = r; vertices[off + 4] = g; vertices[off + 5] = b;
+      vertices[off + 6] = 0; vertices[off + 7] = 0; vertices[off + 8] = 1; vertices[off + 9] = 0; vertices[off + 10] = 0; vertices[off + 11] = 1;
       // Vert 2
-      vertices[off + 6] = x2; vertices[off + 7] = y2; vertices[off + 8] = z2;
-      vertices[off + 9] = r; vertices[off + 10] = g; vertices[off + 11] = b;
+      vertices[off + 12] = x2; vertices[off + 13] = y2; vertices[off + 14] = z2;
+      vertices[off + 15] = r; vertices[off + 16] = g; vertices[off + 17] = b;
+      vertices[off + 18] = 0; vertices[off + 19] = 0; vertices[off + 20] = 1; vertices[off + 21] = 0; vertices[off + 22] = 0; vertices[off + 23] = 1;
     }
 
-    this.vertexCount = segments * 2;
+    this.vertexCount = vertices.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -417,16 +417,16 @@ export class UMeshComponent extends USceneComponent {
       const z2 = Math.sin(a2) * radius;
 
       // Base edge
-      vertices.push(x1, 0, z1, 0, 1, 0);
-      vertices.push(x2, 0, z2, 0, 1, 0);
+      vertices.push(x1, 0, z1, 0, 1, 0, 0, 0, 1, 0, 0, 1);
+      vertices.push(x2, 0, z2, 0, 1, 0, 0, 0, 1, 0, 0, 1);
 
       // Line to tip
-      vertices.push(x1, 0, z1, 0, 1, 0);
-      vertices.push(0, height, 0, 0, 1, 0);
+      vertices.push(x1, 0, z1, 0, 1, 0, 0, 0, 1, 0, 0, 1);
+      vertices.push(0, height, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1);
     }
 
     const vertexData = new Float32Array(vertices);
-    this.vertexCount = vertexData.length / 6;
+    this.vertexCount = vertexData.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertexData.byteLength,
@@ -441,30 +441,45 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a line-based cube for scale gizmo tips.
    */
-  public createGizmoCube(device: GPUDevice, size: number = 0.1): void {
+  public createGizmoCube(device: GPUDevice, size: number = 0.5, color: number[] = [1, 1, 1]): void {
     this.vertexBuffer?.destroy();
     this.topology = 'line-list';
 
     const s = size * 0.5;
+    const [r, g, b] = color;
     const vertices = new Float32Array([
-      // Bottom
-      -s, -s, -s, 0, 1, 0, s, -s, -s, 0, 1, 0,
-      s, -s, -s, 0, 1, 0, s, -s, s, 0, 1, 0,
-      s, -s, s, 0, 1, 0, -s, -s, s, 0, 1, 0,
-      -s, -s, s, 0, 1, 0, -s, -s, -s, 0, 1, 0,
-      // Top
-      -s, s, -s, 0, 1, 0, s, s, -s, 0, 1, 0,
-      s, s, -s, 0, 1, 0, s, s, s, 0, 1, 0,
-      s, s, s, 0, 1, 0, -s, s, s, 0, 1, 0,
-      -s, s, s, 0, 1, 0, -s, s, -s, 0, 1, 0,
-      // Sides
-      -s, -s, -s, 0, 1, 0, -s, s, -s, 0, 1, 0,
-      s, -s, -s, 0, 1, 0, s, s, -s, 0, 1, 0,
-      s, -s, s, 0, 1, 0, s, s, s, 0, 1, 0,
-      -s, -s, s, 0, 1, 0, -s, s, s, 0, 1, 0,
+      // Front face
+      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+
+      // Back face
+      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+
+      // Connecting lines
+      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
     ]);
 
-    this.vertexCount = 24;
+    this.vertexCount = vertices.length / 12;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -479,7 +494,7 @@ export class UMeshComponent extends USceneComponent {
   /**
    * Generates a smooth UV sphere.
    */
-  public createSphere(device: GPUDevice, radius: number = 1.0, latSegments: number = 16, lonSegments: number = 32): void {
+  public createSphere(device: GPUDevice, radius: number = 1.0, segments: number = 32): void {
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.topology = 'triangle-list';
@@ -487,68 +502,73 @@ export class UMeshComponent extends USceneComponent {
     const vertices: number[] = [];
     const indices: number[] = [];
 
-    for (let lat = 0; lat <= latSegments; lat++) {
-      const theta = (lat * Math.PI) / latSegments;
-      const sinTheta = Math.sin(theta);
-      const cosTheta = Math.cos(theta);
-      const v = lat / latSegments;
+    for (let y = 0; y <= segments; y++) {
+      const v = y / segments;
+      const phi = v * Math.PI; // vertically from 0 to PI
 
-      for (let lon = 0; lon <= lonSegments; lon++) {
-        const phi = (lon * 2 * Math.PI) / lonSegments;
-        const sinPhi = Math.sin(phi);
-        const cosPhi = Math.cos(phi);
-        const u = lon / lonSegments;
+      for (let x = 0; x <= segments; x++) {
+        const u = x / segments;
+        const theta = u * Math.PI * 2; // horizontally from 0 to 2PI
 
-        const nx = cosPhi * sinTheta;
-        const ny = cosTheta;
-        const nz = sinPhi * sinTheta;
+        const px = radius * Math.sin(phi) * Math.cos(theta);
+        const py = radius * Math.cos(phi);
+        const pz = radius * Math.sin(phi) * Math.sin(theta);
 
-        const x = nx * radius;
-        const y = ny * radius;
-        const z = nz * radius;
+        const nx = px / radius, ny = py / radius, nz = pz / radius;
 
-        // Position
-        vertices.push(x, y, z);
-        // Normal (UV sphere normals are the unit direction from center)
-        vertices.push(nx, ny, nz);
-        // UV
-        vertices.push(u, v);
+        // Phase 34: Sphere Tangent derivation
+        // Taking the derivative of position vector with respect to theta (u)
+        // dP/dtheta = (-R * sin(phi) * sin(theta), 0, R * sin(phi) * cos(theta))
+        let tx = -Math.sin(theta);
+        let ty = 0;
+        let tz = Math.cos(theta);
+        // Normalize the tangent
+        const tLen = Math.sqrt(tx * tx + tz * tz);
+        if (tLen > 0.0001) {
+          tx /= tLen;
+          tz /= tLen;
+        } else {
+          tx = 1; ty = 0; tz = 0; // fallback at poles
+        }
+
+        // [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
+        vertices.push(px, py, pz, nx, ny, nz, u, 1 - v, tx, ty, tz, 1.0);
       }
     }
 
-    for (let lat = 0; lat < latSegments; lat++) {
-      for (let lon = 0; lon < lonSegments; lon++) {
-        const first = lat * (lonSegments + 1) + lon;
-        const second = first + lonSegments + 1;
+    for (let y = 0; y < segments; y++) {
+      for (let x = 0; x < segments; x++) {
+        const i1 = y * (segments + 1) + x;
+        const i2 = i1 + 1;
+        const i3 = (y + 1) * (segments + 1) + x;
+        const i4 = i3 + 1;
 
-        indices.push(first, second, first + 1);
-        indices.push(second, second + 1, first + 1);
+        indices.push(i1, i3, i2);
+        indices.push(i2, i3, i4);
       }
     }
 
-    this.vertexCount = vertices.length / 8;
     this.indexCount = indices.length;
-
-    const vertexData = new Float32Array(vertices);
-    const indexData = new Uint16Array(indices);
+    // Phase 34: 12 floats per vertex
+    this.vertexCount = vertices.length / 12;
 
     this.vertexBuffer = device.createBuffer({
-      size: vertexData.byteLength,
+      size: vertices.length * 4,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
       mappedAtCreation: true,
     });
-    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertexData);
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
     this.vertexBuffer.unmap();
 
     this.indexBuffer = device.createBuffer({
-      size: indexData.byteLength,
+      size: indices.length * 2,
       usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
       mappedAtCreation: true,
     });
-    new Uint16Array(this.indexBuffer.getMappedRange()).set(indexData);
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
     this.indexBuffer.unmap();
 
-    this.material = new UMaterial();
+    if (!this.material) this.material = new UMaterial();
   }
 
   /**

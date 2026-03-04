@@ -28,6 +28,7 @@ struct VertexOut {
     @location(1) worldPos: vec3<f32>,
     @location(2) shadowPos: vec4<f32>,
     @location(3) uv: vec2<f32>,
+    @location(4) tangent: vec4<f32>,
 }
 
 const PI: f32 = 3.14159265359;
@@ -36,7 +37,8 @@ const PI: f32 = 3.14159265359;
 fn vs_main(
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>
+    @location(2) uv: vec2<f32>,
+    @location(3) tangent: vec4<f32>
 ) -> VertexOut {
     let worldPosVec4 = uniforms.modelMatrix * vec4<f32>(position, 1.0);
     
@@ -47,6 +49,8 @@ fn vs_main(
     out.normal = (uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz;
     out.shadowPos = scene.lightViewProj * worldPosVec4;
     out.uv = uv;
+    // Phase 34: Convert the 3D tangential direction to world space
+    out.tangent = vec4<f32>((uniforms.modelMatrix * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
     return out;
 }
 
@@ -87,13 +91,31 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // Phase 29.1 / 33.1: Texture Retrieval
     let texColor = textureSample(albedoMap, baseColorSampler, in.uv);
     let texRoughness = textureSample(roughnessMap, baseColorSampler, in.uv).r;
-    let dummyNormalRead = textureSample(normalMap, baseColorSampler, in.uv);
+    
+    // Phase 34: Normal Mapping using TBN matrix
+    let rawNormal = textureSample(normalMap, baseColorSampler, in.uv).xyz;
+    // Expand from [0, 1] to [-1, 1]
+    let normalMapVector = rawNormal * 2.0 - 1.0;
+    
+    // Calculate TBN Matrix
+    let geoNormal = normalize(in.normal);
+    let tangent = normalize(in.tangent.xyz);
+    
+    // Gram-Schmidt orthogonalization to ensure T is orthogonal to N
+    let T = normalize(tangent - dot(tangent, geoNormal) * geoNormal);
+    // Calculate Bitangent taking the handedness (w component) into account
+    let B = cross(geoNormal, T) * in.tangent.w;
+
+    let TBN = mat3x3<f32>(T, B, geoNormal);
+    
+    // Final World Space Normal to be used in all lighting equations
+    let finalNormal = normalize(TBN * normalMapVector);
     
     let diffuseColor = uniforms.baseColor.rgb * texColor.rgb;
     let finalRoughness = uniforms.roughness * texRoughness;
 
     let cameraPos = scene.cameraPosition.xyz;
-    let N = normalize(in.normal);
+    let N = finalNormal; // Replace geometric normal with Normal Mapped Normal
     let V = normalize(cameraPos - in.worldPos);
     let L = normalize(-scene.lightDirection.xyz);
     let H = normalize(V + L);
