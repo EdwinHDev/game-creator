@@ -25,6 +25,20 @@ async function initEngine() {
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 4, 12); // Standard isometric perspective (Phase 13.1)
 
+    // --- Phase 31: Test Cube Texture ---
+    const cubeActor = world.spawnActor(AActor, 'TexturedCube', false);
+    const cubeMesh = cubeActor.addComponent(UMeshComponent);
+    cubeActor.rootComponent = cubeMesh;
+    vec3.set(cubeMesh.relativeLocation, 0, 1.5, 0); // Hover above platform
+    const cubeMat = new UMaterial('CubeMat');
+    cubeMat.roughness = 0.3;
+    cubeMat.metallic = 0.0;
+    cubeMesh.material = cubeMat;
+    cubeMesh.createBox(engine.getRenderer().getDevice()!);
+    // Inject the test UV Checker Texture
+    cubeMesh.loadTexture('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/brick_diffuse.jpg', engine.getRenderer().getDevice()!);
+    // -----------------------------------
+
     // --- Phase 12-13: Editor Grid ---
     const gridActor = world.spawnActor(AActor, 'EditorGrid', true);
     const gridMesh = gridActor.addComponent(UMeshComponent);

@@ -122,21 +122,22 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let specularGain = mix(20.0, 0.0, uniforms.roughness);
     let directLighting = (kD * diffuseColor / PI + specular * specularGain) * scene.lightColor.rgb * NdotL * shadowVisibility;
     
-    // Phase 26.1: Dynamic Sky IBL
+    // Phase 26.1 / 31.3: Dynamic Sky IBL Calibration
+    // Desaturated fill colors to prevent neon blue shadows on textured materials
     let sunY = scene.lightDirection.y;
     var skyColor: vec3<f32>;
-    let groundColor = vec3<f32>(0.1, 0.1, 0.1); // Fixed dark ground
+    let groundColor = vec3<f32>(0.02, 0.02, 0.02); // Darker ground bounce
 
     if (sunY < -0.1) {
-        skyColor = vec3<f32>(0.1, 0.3, 0.8);
+        skyColor = vec3<f32>(0.05, 0.06, 0.08); // Desaturated dark blue day
     } else if (sunY < 0.3) {
         let t = (sunY + 0.1) / 0.4;
-        skyColor = mix(vec3<f32>(0.1, 0.3, 0.8), vec3<f32>(0.4, 0.1, 0.5), t);
+        skyColor = mix(vec3<f32>(0.05, 0.06, 0.08), vec3<f32>(0.08, 0.04, 0.06), t); // Desaturated sunset
     } else if (sunY < 0.6) {
         let t = (sunY - 0.3) / 0.3;
-        skyColor = mix(vec3<f32>(0.4, 0.1, 0.5), vec3<f32>(0.0, 0.0, 0.05), t);
+        skyColor = mix(vec3<f32>(0.08, 0.04, 0.06), vec3<f32>(0.0, 0.0, 0.01), t); // Dusk to night
     } else {
-        skyColor = vec3<f32>(0.0, 0.0, 0.05);
+        skyColor = vec3<f32>(0.0, 0.0, 0.01); // Dark night
     }
 
     let upFactor = dot(N, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;

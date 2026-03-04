@@ -116,7 +116,7 @@ export class UMeshComponent extends USceneComponent {
    */
   public async loadTexture(url: string, device: GPUDevice): Promise<void> {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { mode: 'cors' });
       const blob = await response.blob();
       const imageBitmap = await createImageBitmap(blob);
 
