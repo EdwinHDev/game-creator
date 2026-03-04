@@ -4,6 +4,7 @@ import './Viewport';
 import './TopBar';
 import './ContentBrowser';
 import { ProjectSystem } from '../Core/ProjectSystem';
+import { EditorLogger } from '../Core/EditorLogger';
 
 export class AppShell extends HTMLElement {
   private selectedActor: any = null;
@@ -31,7 +32,7 @@ export class AppShell extends HTMLElement {
           EventBus.emit('RequestActorDestruction', this.selectedActor);
           this.selectedActor = null;
         } else {
-          console.warn(`Deletion blocked for protected actor: ${this.selectedActor.name}`);
+          EditorLogger.warn(`Deletion blocked for protected actor: ${this.selectedActor.name}`);
         }
       }
     });

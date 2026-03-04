@@ -4,10 +4,11 @@ import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
 import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus, UMaterial } from '@game-creator/engine';
+import { EditorLogger } from './Core/EditorLogger';
 import { ProjectSystem } from './Core/ProjectSystem';
 import './UI/TopBar';
 
-console.log('Game Creator Editor Initialized');
+EditorLogger.info('Game Creator Editor Initialized');
 
 export let globalEngine: Engine | null = null;
 
@@ -82,7 +83,7 @@ async function initEngine() {
     // Handle actor destruction requests from UI
     EventBus.on('RequestActorDestruction', (actor: any) => {
       if (actor.getComponent && actor.getComponent(UDirectionalLightComponent)) {
-        console.warn('Cannot delete the Directional Light!');
+        EditorLogger.warn('Cannot delete the Directional Light!');
         return;
       }
       world.destroyActor(actor);
@@ -93,7 +94,7 @@ async function initEngine() {
     EventBus.subscribe('PROJECT_LOADED', () => {
       if (!engine.isStarted) {
         engine.start();
-        console.log('Engine loop started after project load.');
+        EditorLogger.info('Engine loop started after project load.');
       }
     });
   }

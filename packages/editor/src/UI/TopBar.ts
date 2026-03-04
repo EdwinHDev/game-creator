@@ -1,5 +1,7 @@
-import { AActor, UMeshComponent, vec3 } from '@game-creator/engine';
+import { AActor, EventBus, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
+import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
+import { vec3 } from 'gl-matrix';
 
 /**
  * TopBar Web Component with tools and spawning actions.
@@ -18,7 +20,7 @@ export class TopBar extends HTMLElement {
 
     import('@game-creator/engine').then(({ EventBus, UDirectionalLightComponent }) => {
       EventBus.on('OnActorSelected', (actor: AActor) => {
-        console.log(`TopBar: Selected actor ${actor.name}`);
+        EditorLogger.info(`TopBar: Selected actor ${actor.name}`);
         const isSun = actor.getComponent(UDirectionalLightComponent);
         const scaleBtn = this.querySelector('#btn-scale') as HTMLButtonElement;
 
@@ -61,8 +63,8 @@ export class TopBar extends HTMLElement {
           <div class="dropdown">
             <button class="dropbtn">Edit</button>
             <div class="dropdown-content">
-              <a href="#">Undo<span class="shortcut">Ctrl+Z</span></a>
-              <a href="#">Redo<span class="shortcut">Ctrl+Y</span></a>
+              <a href="#">Undo <span class="shortcut">Ctrl+Z</span></a>
+              <a href="#">Redo <span class="shortcut">Ctrl+Y</span></a>
             </div>
           </div>
           <div class="dropdown">
@@ -85,27 +87,34 @@ export class TopBar extends HTMLElement {
         <div class="center-zone">
           <div class="transform-tools">
             <button id="btn-move" class="btn-tool active" title="Move">
-              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M19 9l3 3-3 3M9 19l3 3 3-3M2 12h20M12 2v20"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2">
+                <path d="M5 9l-3 3 3 3M9 5l3-3 3 3M19 9l3 3-3 3M9 19l3 3 3-3M2 12h20M12 2v20" />
+              </svg>
             </button>
             <button id="btn-rotate" class="btn-tool" title="Rotate">
-              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
             </button>
             <button id="btn-scale" class="btn-tool" title="Scale">
-              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2"><path d="M21 3l-6 6M21 3v6M21 3h-6M3 21l6-6M3 21v-6M3 21h6M14.5 9.5L9.5 14.5"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2">
+                <path d="M21 3l-6 6M21 3v6M21 3h-6M3 21l6-6M3 21v-6M3 21h6M14.5 9.5L9.5 14.5" />
+              </svg>
             </button>
-            
+
             <div style="width: 1px; height: 16px; background-color: rgba(255,255,255,0.1); margin: auto 4px;"></div>
-            
+
             <button id="btn-toggle-space" class="btn-tool" title="Space: Global" style="color: var(--accent-color);">
               <svg id="icon-global" viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="9"/>
-                <ellipse cx="12" cy="12" rx="9" ry="3"/>
-                <ellipse cx="12" cy="12" rx="3" ry="9"/>
+                <circle cx="12" cy="12" r="9" />
+                <ellipse cx="12" cy="12" rx="9" ry="3" />
+                <ellipse cx="12" cy="12" rx="3" ry="9" />
               </svg>
               <svg id="icon-local" viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
-                <path d="M12 12V3m0 0L9 6m3-3l3 3"/>
-                <path d="M12 12h9m0 0l-3-3m3 3l-3 3"/>
-                <path d="M12 12l-7 7m0 0h3m-3 0v-3"/>
+                <path d="M12 12V3m0 0L9 6m3-3l3 3" />
+                <path d="M12 12h9m0 0l-3-3m3 3l-3 3" />
+                <path d="M12 12l-7 7m0 0h3m-3 0v-3" />
               </svg>
             </button>
           </div>
@@ -114,9 +123,16 @@ export class TopBar extends HTMLElement {
         <!-- Right: Primitives Menu -->
         <div class="right-zone">
           <div class="dropdown">
-            <button class="btn-primary" title="Primitivas">
-              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-              <svg viewBox="0 0 24 24" fill="none" class="icon icon-small" stroke="currentColor" stroke-width="3" style="margin-left:4px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <button class="btn-primary" title="Primitives">
+              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+              <svg viewBox="0 0 24 24" fill="none" class="icon icon-small" stroke="currentColor" stroke-width="3" style="margin-left:4px">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
             </button>
             <div class="dropdown-content dropdown-right">
               <button id="btn-spawn-cube" class="dropdown-button">Cube</button>
@@ -128,6 +144,7 @@ export class TopBar extends HTMLElement {
           </div>
         </div>
       </div>
+
       <style>
         .top-bar-content {
           display: flex;
@@ -143,33 +160,33 @@ export class TopBar extends HTMLElement {
           position: relative;
         }
 
-        .left-zone { 
+        .left-zone {
           flex: 1;
-          display: flex; 
-          justify-content: flex-start; 
-          align-items: center; 
-          gap: 10px; 
+          display: flex;
+          justify-content: flex-start;
+          align-items: center;
+          gap: 10px;
         }
-        
-        .center-zone { 
-          display: flex; 
-          justify-content: center; 
-          align-items: center; 
-          gap: 10px; 
+
+        .center-zone {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          gap: 10px;
         }
-        
-        .right-zone { 
+
+        .right-zone {
           flex: 1;
-          display: flex; 
-          justify-content: flex-end; 
-          align-items: center; 
-          gap: 10px; 
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 10px;
         }
-        
-        /* Dropdowns */
+
         .dropdown {
           position: relative;
         }
+
         .dropbtn {
           background: transparent;
           color: #cccccc;
@@ -180,13 +197,16 @@ export class TopBar extends HTMLElement {
           cursor: pointer;
           transition: background-color 0.15s, color 0.15s;
         }
-        .dropbtn:hover, .dropdown.open .dropbtn {
+
+        .dropbtn:hover {
           background-color: rgba(255, 255, 255, 0.1);
           color: #ffffff;
         }
+
         .dropdown:hover > .dropdown-content {
           display: block;
         }
+
         .dropdown-content {
           display: none;
           position: absolute;
@@ -197,14 +217,16 @@ export class TopBar extends HTMLElement {
           min-width: 160px;
           border-radius: 6px;
           border: 1px solid #444;
-          box-shadow: 0 8px 16px rgba(0,0,0,0.4);
+          box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
           padding: 4px 0;
         }
+
         .dropdown-right {
           left: auto;
           right: 0;
           min-width: 120px;
         }
+
         .dropdown-content a, .dropdown-button {
           color: #ddd;
           padding: 8px 16px;
@@ -220,24 +242,25 @@ export class TopBar extends HTMLElement {
           cursor: pointer;
           transition: background-color 0.1s;
         }
+
         .dropdown-content a:hover, .dropdown-button:hover {
           background-color: var(--accent-color);
           color: white;
         }
+
         .shortcut {
           color: #888;
           font-size: 11px;
         }
-        .dropdown-content a:hover .shortcut {
-          color: #ccc;
-        }
+
         .transform-tools {
           display: flex;
           gap: 4px;
-          background-color: rgba(0,0,0,0.2);
+          background-color: rgba(0, 0, 0, 0.2);
           padding: 3px;
           border-radius: 6px;
         }
+
         .btn-tool {
           background: transparent;
           color: #aaa;
@@ -248,43 +271,18 @@ export class TopBar extends HTMLElement {
           cursor: pointer;
           transition: all 0.2s;
         }
+
         .btn-tool:hover {
           color: white;
-          background-color: rgba(255,255,255,0.05);
+          background-color: rgba(255, 255, 255, 0.05);
         }
+
         .btn-tool.active {
           background-color: var(--accent-color);
           color: white;
           font-weight: bold;
         }
-        .btn-tool .icon {
-          width: 16px;
-          height: 16px;
-          vertical-align: middle;
-        }
-        .btn-icon {
-          background: transparent;
-          color: #aaa;
-          border: none;
-          padding: 4px;
-          border-radius: 4px;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-        .btn-icon:hover {
-          color: white;
-          background-color: rgba(255,255,255,0.05);
-        }
-        .btn-icon .icon {
-          width: 20px;
-          height: 20px;
-          vertical-align: middle;
-        }
-        .divider {
-          width: 1px;
-          height: 20px;
-          background-color: var(--border-color);
-        }
+
         .btn-primary {
           background-color: #444;
           color: #eee;
@@ -298,15 +296,17 @@ export class TopBar extends HTMLElement {
           display: flex;
           align-items: center;
         }
+
         .btn-primary:hover {
           background-color: #555;
         }
-        .btn-primary .icon {
-          width: 18px;
-          height: 18px;
-          vertical-align: middle;
+
+        .icon {
+          width: 16px;
+          height: 16px;
         }
-        .btn-primary .icon-small {
+
+        .icon-small {
           width: 12px;
           height: 12px;
         }
@@ -321,11 +321,9 @@ export class TopBar extends HTMLElement {
       const btn = this.querySelector(`#${id}`);
       if (btn) {
         btn.addEventListener('click', () => {
-          // Update visual active state
           this.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
 
-          // Emit event
           import('@game-creator/engine').then(({ EventBus }) => {
             EventBus.emit('OnTransformModeChanged', modes[index]);
           });
@@ -403,7 +401,6 @@ export class TopBar extends HTMLElement {
 
     if (!device) return;
 
-    // 1. Find the editor camera
     const actors = world.actors;
     const cameraActor = actors.find((a: any) => a.name === 'MainCamera');
 
@@ -413,31 +410,26 @@ export class TopBar extends HTMLElement {
       const camPos = cameraActor.rootComponent.relativeLocation;
       const camRot = cameraActor.rootComponent.relativeRotation;
 
-      // Calculate forward vector from rotation
       const forward = vec3.fromValues(0, 0, -1);
       vec3.transformQuat(forward, forward, camRot);
 
-      // Spawn 5 units in front
       vec3.scaleAndAdd(spawnPos, camPos, forward, 5);
     }
 
-    // 2. Spawn the actor
     const itemCount = actors.filter((a: any) => a.name.startsWith(`${type}_`)).length;
     const newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
     const mesh = newActor.addComponent(UMeshComponent);
     newActor.rootComponent = mesh;
 
-    // Set position
     vec3.copy(mesh.relativeLocation, spawnPos);
 
-    // Create GPU buffers based on primitive type
     if (type === 'Cube') mesh.createBox(device);
     else if (type === 'Sphere') mesh.createSphere(device, 1.0, 32);
     else if (type === 'Plane') mesh.createPlane(device, 2.0, 10);
     else if (type === 'Cylinder') mesh.createCylinder(device, 1.0, 2.0, 32);
     else if (type === 'Capsule') mesh.createCapsule(device, 0.5, 2.0, 32, 16);
 
-    console.log(`Spawned new ${type} at ${spawnPos}`);
+    EditorLogger.info(`Spawned new ${type} at ${spawnPos}`);
   }
 
   private setupStyles() {

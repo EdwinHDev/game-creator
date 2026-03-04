@@ -11,7 +11,7 @@ export enum LogLevel {
  * Static Logger utility for the engine.
  */
 export class Logger {
-  private static readonly prefix = '[GameCreator]';
+  private static readonly prefix = '[Engine]';
 
   public static info(message: string, ...args: any[]): void {
     this.log(LogLevel.INFO, message, ...args);

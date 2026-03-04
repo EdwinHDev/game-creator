@@ -1,4 +1,5 @@
 import { EventBus } from '@game-creator/engine';
+import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
 
 /**
@@ -10,7 +11,7 @@ export class ContentBrowser extends HTMLElement {
   private actionBar: HTMLDivElement;
   private contentArea: HTMLDivElement;
   private currentTab: string = 'All';
-  private directoryHandle: FileSystemDirectoryHandle | null = null;
+  private isRefreshing: boolean = false;
 
   constructor() {
     super();
@@ -71,7 +72,85 @@ export class ContentBrowser extends HTMLElement {
       alert('Import feature coming soon!');
     });
 
-    newMatBtn.addEventListener('click', () => this.handleCreateMaterial());
+    newMatBtn.addEventListener('click', () => {
+      // Create a small centered modal
+      const modal = document.createElement('div');
+      modal.style.position = 'absolute';
+      modal.style.top = '50%';
+      modal.style.left = '50%';
+      modal.style.transform = 'translate(-50%, -50%)';
+      modal.style.backgroundColor = 'var(--bg-panel)';
+      modal.style.padding = '20px';
+      modal.style.border = '1px solid var(--border-color)';
+      modal.style.borderRadius = '8px';
+      modal.style.boxShadow = '0 10px 25px rgba(0,0,0,0.5)';
+      modal.style.zIndex = '1000';
+      modal.style.display = 'flex';
+      modal.style.flexDirection = 'column';
+      modal.style.gap = '16px';
+      modal.style.minWidth = '300px';
+
+      const title = document.createElement('div');
+      title.textContent = 'Create New Material';
+      title.style.fontSize = '0.9rem';
+      title.style.fontWeight = 'bold';
+      title.style.color = 'var(--text-main)';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'e.g. M_Metal_Rust';
+      input.value = '';
+      input.style.backgroundColor = 'var(--bg-surface)';
+      input.style.color = 'var(--text-main)';
+      input.style.border = '1px solid var(--border-color)';
+      input.style.padding = '10px';
+      input.style.borderRadius = '4px';
+      input.style.outline = 'none';
+      input.style.fontSize = '0.8rem';
+
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.justifyContent = 'flex-end';
+      actions.style.gap = '10px';
+
+      const cancelBtn = this.createActionButton('Cancel');
+      const createBtn = this.createActionButton('Create');
+      createBtn.style.backgroundColor = 'var(--accent-color)';
+      createBtn.style.borderColor = 'var(--accent-color)';
+
+      const handleCreate = async () => {
+        const matName = input.value.trim();
+        if (!matName) {
+          alert("Material name cannot be empty.");
+          return;
+        }
+
+        const success = await ProjectSystem.createNewMaterial(matName);
+        if (success) {
+          modal.remove();
+          this.refreshContent();
+        } else {
+          alert(`Material '${matName}' already exists or failed to create. Please choose another name.`);
+        }
+      };
+
+      cancelBtn.onclick = () => modal.remove();
+      createBtn.onclick = handleCreate;
+
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') handleCreate();
+        if (e.key === 'Escape') modal.remove();
+      };
+
+      actions.appendChild(cancelBtn);
+      actions.appendChild(createBtn);
+      modal.appendChild(title);
+      modal.appendChild(input);
+      modal.appendChild(actions);
+      this.appendChild(modal);
+
+      setTimeout(() => input.focus(), 10);
+    });
 
     this.actionBar.appendChild(importBtn);
     this.actionBar.appendChild(newMatBtn);
@@ -94,19 +173,23 @@ export class ContentBrowser extends HTMLElement {
   }
 
   connectedCallback() {
-    EventBus.subscribe('PROJECT_LOADED', (data: any) => {
-      this.directoryHandle = data.handle;
-      this.refreshContent();
-    });
-
-    EventBus.on('RequestContentBrowserRefresh', () => this.refreshContent());
+    EventBus.on('PROJECT_LOADED', this.handleRefresh);
+    EventBus.on('RequestContentBrowserRefresh', this.handleRefresh);
 
     // Initial load if project already open
-    if (ProjectSystem.directoryHandle) {
-      this.directoryHandle = ProjectSystem.directoryHandle;
+    if (ProjectSystem.getDirectoryHandle()) {
       this.refreshContent();
     }
   }
+
+  disconnectedCallback() {
+    EventBus.off('PROJECT_LOADED', this.handleRefresh);
+    EventBus.off('RequestContentBrowserRefresh', this.handleRefresh);
+  }
+
+  private handleRefresh = () => {
+    this.refreshContent();
+  };
 
   private setupBaseStyles() {
     this.style.display = 'flex';
@@ -166,113 +249,98 @@ export class ContentBrowser extends HTMLElement {
   }
 
   private async refreshContent() {
-    if (!this.directoryHandle) return;
-
-    this.contentArea.innerHTML = '';
+    // Si ya está escaneando, ignoramos esta llamada
+    if (this.isRefreshing) return;
+    this.isRefreshing = true;
 
     try {
-      let targetHandle = this.directoryHandle;
-      try {
-        targetHandle = await this.directoryHandle.getDirectoryHandle('Assets');
-      } catch (e) {
-        // Fallback to root or keep searching
-      }
+      const handle = ProjectSystem.getDirectoryHandle();
+      if (!handle) return;
 
-      for await (const [name, entry] of (targetHandle as any).entries()) {
-        if (entry.kind === 'file') {
-          if (!this.matchesFilter(name)) continue;
+      const assetsHandle = await handle.getDirectoryHandle('Assets', { create: true });
 
-          this.createAssetIcon(name);
-        }
-      }
+      // Limpiamos el DOM estrictamente AQUÍ, justo antes del escaneo
+      this.contentArea.innerHTML = '';
+
+      await this.scanDirectory(assetsHandle);
     } catch (e) {
-      console.error("ContentBrowser: Error refreshing content", e);
-      this.contentArea.innerHTML = `<div style="color:var(--text-muted); padding:10px;">Error loading assets.</div>`;
+      EditorLogger.error("Error leyendo carpeta Assets:", e);
+    } finally {
+      // Liberamos el candado sin importar si hubo éxito o error
+      this.isRefreshing = false;
     }
   }
 
-  private matchesFilter(filename: string): boolean {
-    if (this.currentTab === 'All') return true;
-
-    const ext = filename.toLowerCase().split('.').pop();
-    if (this.currentTab === 'Textures') {
-      return ['png', 'jpg', 'jpeg', 'tga', 'webp'].includes(ext || '');
+  // Nuevo método recursivo
+  private async scanDirectory(dirHandle: any) {
+    for await (const [name, entry] of (dirHandle as any).entries()) {
+      if (entry.kind === 'file') {
+        // Si es archivo, aplicamos los filtros de las pestañas
+        if (this.shouldShowFile(name, this.currentTab)) {
+          this.createFileItem(name, entry);
+        }
+      } else if (entry.kind === 'directory') {
+        // Si es una subcarpeta (ej. 'Materials'), entramos recursivamente a buscar más archivos
+        await this.scanDirectory(entry);
+      }
     }
-    if (this.currentTab === 'Models') {
-      return ['glb', 'gltf'].includes(ext || '');
-    }
-    if (this.currentTab === 'Materials') {
-      return ext === 'mat';
-    }
-    return true;
   }
 
-  private createAssetIcon(name: string) {
-    const isMat = name.endsWith('.mat');
-    const isTex = /\.(png|jpg|jpeg|webp|tga)$/i.test(name);
-    const isModel = /\.(glb|gltf)$/i.test(name);
+  private shouldShowFile(filename: string, tab: string): boolean {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    if (tab === 'All') return true;
+    if (tab === 'Textures') return ['png', 'jpg', 'jpeg', 'tga', 'webp'].includes(ext);
+    if (tab === 'Models') return ['glb', 'gltf', 'obj'].includes(ext);
+    if (tab === 'Materials') return ext === 'mat';
+    return false;
+  }
 
+  private createFileItem(name: string, _entry: any) {
     const item = document.createElement('div');
     item.style.width = '80px';
     item.style.height = '100px';
     item.style.display = 'flex';
     item.style.flexDirection = 'column';
     item.style.alignItems = 'center';
-    item.style.justifyContent = 'center';
+    item.style.padding = '8px';
     item.style.cursor = 'pointer';
     item.style.borderRadius = '4px';
-    item.style.padding = '4px';
-    item.style.transition = 'background 0.2s';
-    item.style.border = '1px solid transparent';
+    item.style.transition = 'background-color 0.2s';
 
-    if (isMat) {
-      item.style.backgroundColor = 'rgba(var(--accent-rgb, 60, 130, 246), 0.05)';
-      item.style.borderColor = 'rgba(var(--accent-rgb, 60, 130, 246), 0.2)';
-    }
+    item.onmouseenter = () => item.style.backgroundColor = 'rgba(255,255,255,0.05)';
+    item.onmouseleave = () => item.style.backgroundColor = 'transparent';
 
-    item.onmouseenter = () => {
-      item.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-      item.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-    };
-    item.onmouseleave = () => {
-      item.style.backgroundColor = isMat ? 'rgba(var(--accent-rgb, 60, 130, 246), 0.05)' : 'transparent';
-      item.style.borderColor = isMat ? 'rgba(var(--accent-rgb, 60, 130, 246), 0.2)' : 'transparent';
-    };
-
+    // Icono basado en extensión
     const icon = document.createElement('div');
-    icon.textContent = isMat ? '📦' : (isTex ? '🖼️' : (isModel ? '🏗️' : '📄'));
-    icon.style.fontSize = '2rem';
-    icon.style.marginBottom = '4px';
+    icon.style.fontSize = '40px';
+    icon.style.marginBottom = '10px';
+    if (name.endsWith('.mat')) icon.textContent = '🎨';
+    else if (name.endsWith('.png') || name.endsWith('.jpg')) icon.textContent = '🖼️';
+    else if (name.endsWith('.glb')) icon.textContent = '🧊';
+    else icon.textContent = '📄';
 
-    const label = document.createElement('div');
-    label.textContent = name;
-    label.style.fontSize = '0.65rem';
-    label.style.width = '100%';
-    label.style.textAlign = 'center';
-    label.style.whiteSpace = 'nowrap';
-    label.style.overflow = 'hidden';
-    label.style.textOverflow = 'ellipsis';
-    label.style.color = isMat ? 'var(--accent-color)' : 'var(--text-muted)';
+    const text = document.createElement('div');
+    text.textContent = name;
+    text.style.fontSize = '0.75rem';
+    text.style.color = 'var(--text-main)';
+    text.style.textAlign = 'center';
+    text.style.wordBreak = 'break-all';
 
     item.appendChild(icon);
-    item.appendChild(label);
+    item.appendChild(text);
 
+    // Interaction
     item.addEventListener('click', () => {
-      if (isMat) EventBus.emit('OnMaterialSelected', { relativePath: name });
+      EventBus.emit('OnAssetSelected', {
+        type: name.endsWith('.mat') ? 'material' : 'texture',
+        name: name,
+        path: `Materials/${name}` // Maintain consistency with current relative path logic
+      });
     });
 
     this.contentArea.appendChild(item);
   }
 
-  private async handleCreateMaterial() {
-    const name = prompt("Material Name:", "M_NewMaterial");
-    if (name) {
-      const success = await ProjectSystem.createMaterialAsset(name);
-      if (success) {
-        this.refreshContent();
-      }
-    }
-  }
 }
 
 customElements.define('gc-content-browser', ContentBrowser);

@@ -1,4 +1,5 @@
 import { EventBus } from '@game-creator/engine';
+import { EditorLogger } from '../Core/EditorLogger';
 
 /**
  * Outliner Web Component that displays the hierarchy of actors in the world.
@@ -101,7 +102,7 @@ export class Outliner extends HTMLElement {
 
     // Emit event for other components (e.g., Detail panel)
     EventBus.emit('OnActorSelected', actor);
-    console.log(`Actor selected in Outliner: ${actor.name} (${actor.id})`);
+    EditorLogger.info(`Actor selected in Outliner: ${actor.name} (${actor.id})`);
   }
 
   private setupStyles() {

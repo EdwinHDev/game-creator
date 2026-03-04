@@ -1,4 +1,5 @@
 import { UMeshComponent, UAssetManager, EventBus } from '@game-creator/engine';
+import { EditorLogger } from './EditorLogger';
 
 /**
  * Static class to manage the project lifecycle using the File System Access API.
@@ -6,6 +7,13 @@ import { UMeshComponent, UAssetManager, EventBus } from '@game-creator/engine';
 export class ProjectSystem {
   public static directoryHandle: FileSystemDirectoryHandle | null = null;
   public static projectName: string = 'Untitled Project';
+
+  /**
+   * Returns the current project directory handle.
+   */
+  public static getDirectoryHandle(): FileSystemDirectoryHandle | null {
+    return this.directoryHandle;
+  }
 
   /**
    * Creates a new project structure in a user-selected directory.
@@ -18,9 +26,9 @@ export class ProjectSystem {
 
       if (!handle) return false;
 
-      // Validate: Must be empty
+      // 1. Strict Validation: Must be absolutely empty
       if (!await this.validateDirectoryForNew(handle)) {
-        alert('Directorio no válido: La carpeta debe estar vacía para un nuevo proyecto.');
+        alert('Error: La carpeta debe estar completamente vacía para crear un nuevo proyecto.');
         return false;
       }
 
@@ -32,11 +40,11 @@ export class ProjectSystem {
       EventBus.dispatch('PROJECT_LOADED', { handle: handle });
       EventBus.emit('RequestContentBrowserRefresh', {});
 
-      // Create folder structure
+      // 2. Base Structure Creation
       await handle.getDirectoryHandle('Assets', { create: true });
       await handle.getDirectoryHandle('Saved', { create: true });
 
-      // Create project file
+      // 3. Project Manifest Creation
       const projectFileHandle = await handle.getFileHandle('Project.gproj', { create: true });
       const writable = await (projectFileHandle as any).createWritable();
       await writable.write(JSON.stringify({
@@ -46,28 +54,38 @@ export class ProjectSystem {
       }, null, 2));
       await writable.close();
 
-      console.log(`Project created: ${this.projectName}`);
+      // 4. Initial Scene Creation
+      const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: true });
+      const sceneWritable = await (sceneFileHandle as any).createWritable();
+      await sceneWritable.write(JSON.stringify({ actors: [] }, null, 2));
+      await sceneWritable.close();
+
+      EditorLogger.info(`Project created: ${this.projectName}`);
       return true;
     } catch (error) {
-      console.error('Failed to create project:', error);
+      EditorLogger.error('Failed to create project:', error);
       return false;
     }
   }
 
   private static async validateDirectoryForNew(handle: FileSystemDirectoryHandle): Promise<boolean> {
-    let isEmpty = true;
+    // If we enter the loop even once, it's not empty
     for await (const _ of (handle as any).values()) {
-      _; // Silence unused warning
-      isEmpty = false;
-      break;
+      return false;
     }
-    return isEmpty;
+    return true;
   }
 
   private static async validateDirectoryForOpen(handle: FileSystemDirectoryHandle): Promise<boolean> {
     try {
-      await handle.getFileHandle('Project.gproj');
-      return true;
+      // Look for manifest or scene file
+      try {
+        await handle.getFileHandle('Project.gproj');
+        return true;
+      } catch {
+        await handle.getFileHandle('Scene.json');
+        return true;
+      }
     } catch {
       return false;
     }
@@ -78,7 +96,7 @@ export class ProjectSystem {
    */
   public static async saveProject(world: any): Promise<void> {
     if (!this.directoryHandle) {
-      console.warn('Cannot save project: No project open.');
+      EditorLogger.warn('Cannot save project: No project open.');
       return;
     }
 
@@ -89,9 +107,9 @@ export class ProjectSystem {
       await writable.write(JSON.stringify(worldData, null, 2));
       await writable.close();
 
-      console.log(`Project saved: ${this.projectName}`);
+      EditorLogger.info(`Project saved: ${this.projectName}`);
     } catch (error) {
-      console.error('Failed to save project:', error);
+      EditorLogger.error('Failed to save project:', error);
     }
   }
 
@@ -106,9 +124,9 @@ export class ProjectSystem {
 
       if (!handle) return;
 
-      // Validate project file
+      // Strict Validation: Must have a project file
       if (!await this.validateDirectoryForOpen(handle)) {
-        alert('Directorio no válido: No se encontró el archivo Project.gproj.');
+        alert('Error: No se encontró un proyecto válido en esta carpeta (Falta Scene.json o Project.gproj).');
         return;
       }
 
@@ -117,6 +135,24 @@ export class ProjectSystem {
       document.title = `Game Creator - ${this.projectName}`;
 
       UAssetManager.getInstance().reset(handle);
+
+      // 5. Load Scene Data if engine is provided
+      if (engine) {
+        try {
+          const sceneFileHandle = await handle.getFileHandle('Scene.json');
+          const file = await sceneFileHandle.getFile();
+          const text = await file.text();
+          if (text.trim()) {
+            const sceneData = JSON.parse(text);
+            if (engine.getWorld()) {
+              await engine.getWorld().deserialize(sceneData);
+            }
+          }
+        } catch (e) {
+          EditorLogger.warn('Scene.json not found or failed to parse, starting with empty scene.');
+        }
+      }
+
       EventBus.dispatch('PROJECT_LOADED', { handle: handle });
       EventBus.emit('RequestContentBrowserRefresh', {});
 
@@ -152,13 +188,20 @@ export class ProjectSystem {
         }
 
       } catch (e) {
-        console.warn('No Scene.json found or failed to load scene data.');
+        EditorLogger.warn('No Scene.json found or failed to load scene data.');
       }
 
-      console.log(`Project loaded: ${this.projectName}`);
+      EditorLogger.info(`Project loaded: ${this.projectName}`);
     } catch (error) {
-      console.error('Failed to load project:', error);
+      EditorLogger.error('Failed to load project:', error);
     }
+  }
+
+  /**
+   * Alias for createMaterialAsset for easier naming consistency.
+   */
+  public static async createNewMaterial(name: string): Promise<string | null> {
+    return this.createMaterialAsset(name);
   }
 
   /**
@@ -168,28 +211,40 @@ export class ProjectSystem {
     if (!this.directoryHandle) return null;
 
     try {
-      const assetsDir = await this.directoryHandle.getDirectoryHandle('Assets', { create: true });
-      const materialsDir = await assetsDir.getDirectoryHandle('Materials', { create: true });
+      // Obtenemos Assets
+      const assetsHandle = await this.directoryHandle.getDirectoryHandle('Assets', { create: true });
+
+      // Entramos/Creamos la subcarpeta Materials
+      const materialsHandle = await assetsHandle.getDirectoryHandle('Materials', { create: true });
 
       const fileName = `${name}.mat`;
-      const fileHandle = await materialsDir.getFileHandle(fileName, { create: true });
 
-      const materialData = {
-        name: name,
-        baseColor: [1, 1, 1, 1],
-        metallic: 0.0,
-        roughness: 0.5,
-        textures: { albedo: "", roughness: "", normal: "" }
-      };
+      try {
+        // Verificamos en la subcarpeta
+        await materialsHandle.getFileHandle(fileName);
+        EditorLogger.warn(`Material '${fileName}' already exists. Creation aborted.`);
+        return null;
+      } catch (e) {
+        // Creamos en la subcarpeta
+        const fileHandle = await materialsHandle.getFileHandle(fileName, { create: true });
 
-      const writable = await (fileHandle as any).createWritable();
-      await writable.write(JSON.stringify(materialData, null, 2));
-      await writable.close();
+        const materialData = {
+          name: name,
+          baseColor: [1, 1, 1, 1],
+          metallic: 0.0,
+          roughness: 0.5,
+          textures: { albedo: "", roughness: "", normal: "" }
+        };
 
-      console.log(`ProjectSystem: Created material ${fileName}`);
-      return `Materials/${fileName}`; // Relative path from Assets
+        const writable = await (fileHandle as any).createWritable();
+        await writable.write(JSON.stringify(materialData, null, 2));
+        await writable.close();
+
+        EditorLogger.info(`Created material ${fileName} in /Assets/Materials`);
+        return `Materials/${fileName}`; // Relative path from Assets
+      }
     } catch (e) {
-      console.error("ProjectSystem: Failed to create material", e);
+      EditorLogger.error("ProjectSystem: Failed to create material", e);
       return null;
     }
   }
@@ -218,10 +273,52 @@ export class ProjectSystem {
       await writable.write(JSON.stringify(data, null, 2));
       await writable.close();
 
-      console.log(`ProjectSystem: Saved material ${relativePath}`);
+      EditorLogger.info(`ProjectSystem: Saved material ${relativePath}`);
       return true;
     } catch (e) {
-      console.error("ProjectSystem: Failed to save material", e);
+      EditorLogger.error("ProjectSystem: Failed to save material", e);
+      return false;
+    }
+  }
+
+  /**
+   * Loads material data (.mat) from Assets/Materials/
+   */
+  public static async loadMaterialData(fileName: string): Promise<any | null> {
+    if (!this.directoryHandle) return null;
+
+    try {
+      const assetsDir = await this.directoryHandle.getDirectoryHandle('Assets');
+      const materialsDir = await assetsDir.getDirectoryHandle('Materials');
+      const fileHandle = await materialsDir.getFileHandle(fileName);
+      const file = await fileHandle.getFile();
+      const text = await file.text();
+      return JSON.parse(text);
+    } catch (e) {
+      EditorLogger.error(`ProjectSystem: Failed to load material data for ${fileName}`, e);
+      return null;
+    }
+  }
+
+  /**
+   * Saves material data (.mat) to Assets/Materials/
+   */
+  public static async saveMaterialData(fileName: string, data: any): Promise<boolean> {
+    if (!this.directoryHandle) return false;
+
+    try {
+      const assetsDir = await this.directoryHandle.getDirectoryHandle('Assets');
+      const materialsDir = await assetsDir.getDirectoryHandle('Materials');
+      const fileHandle = await materialsDir.getFileHandle(fileName, { create: true });
+
+      const writable = await (fileHandle as any).createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+
+      EditorLogger.info(`ProjectSystem: Saved material data for ${fileName}`);
+      return true;
+    } catch (e) {
+      EditorLogger.error(`ProjectSystem: Failed to save material data for ${fileName}`, e);
       return false;
     }
   }

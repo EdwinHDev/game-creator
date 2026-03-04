@@ -1,11 +1,15 @@
 import { EventBus, quat, UDirectionalLightComponent } from '@game-creator/engine';
+import { EditorLogger } from '../Core/EditorLogger';
+import { ProjectSystem } from '../Core/ProjectSystem';
 
 /**
  * Details Panel Web Component for inspecting and modifying actor properties.
  */
 export class DetailsPanel extends HTMLElement {
   private currentActor: any = null;
-  private currentMaterialPath: string | null = null;
+  private currentMode: 'actor' | 'asset' = 'actor';
+  private selectedAssetName: string | null = null;
+  private selectedAssetData: any = null;
 
   constructor() {
     super();
@@ -15,7 +19,7 @@ export class DetailsPanel extends HTMLElement {
   connectedCallback() {
     EventBus.on('OnActorSelected', this.handleActorSelected);
     EventBus.on('OnActorDestroyed', this.handleActorDestroyed);
-    EventBus.on('OnMaterialSelected', this.handleMaterialSelected);
+    EventBus.on('OnAssetSelected', this.handleAssetSelected);
     EventBus.on('EngineTick', this.handleTick);
     this.render();
   }
@@ -23,22 +27,34 @@ export class DetailsPanel extends HTMLElement {
   disconnectedCallback() {
     EventBus.off('OnActorSelected', this.handleActorSelected);
     EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
-    EventBus.off('OnMaterialSelected', this.handleMaterialSelected);
+    EventBus.off('OnAssetSelected', this.handleAssetSelected);
     EventBus.off('EngineTick', this.handleTick);
   }
 
   private handleActorSelected = (actor: any) => {
-    console.log('DetailsPanel received actor:', actor?.name);
+    EditorLogger.info('DetailsPanel received actor:', actor?.name);
     this.currentActor = actor;
-    this.currentMaterialPath = null;
+    this.currentMode = 'actor';
+    this.selectedAssetName = null;
     this.render();
   };
 
-  private handleMaterialSelected = (payload: any) => {
-    console.log('DetailsPanel received material:', payload.relativePath);
-    this.currentMaterialPath = payload.relativePath;
-    this.currentActor = null;
-    this.render();
+  private handleAssetSelected = async (asset: any) => {
+    EditorLogger.info('DetailsPanel received asset:', asset.name);
+    if (asset.type === 'material') {
+      this.currentMode = 'asset';
+      this.selectedAssetName = asset.name;
+      this.selectedAssetData = await ProjectSystem.loadMaterialData(asset.name);
+      this.currentActor = null;
+      this.render();
+    } else {
+      // Texture or other assets - basic preview
+      this.currentMode = 'asset';
+      this.selectedAssetName = asset.name;
+      this.selectedAssetData = null;
+      this.currentActor = null;
+      this.render();
+    }
   };
 
   private handleActorDestroyed = (actor: any) => {
@@ -117,7 +133,7 @@ export class DetailsPanel extends HTMLElement {
     this.innerHTML = '';
 
     // 2. Fallback if no selection
-    if (!this.currentActor && !this.currentMaterialPath) {
+    if (!this.currentActor && !this.selectedAssetName) {
       const empty = document.createElement('div');
       empty.className = 'p-4 text-muted';
       empty.style.opacity = '0.5';
@@ -129,8 +145,16 @@ export class DetailsPanel extends HTMLElement {
     }
 
     // SCENARIO B: Material Asset Selected
-    if (this.currentMaterialPath) {
-      this.renderMaterialAssetUI();
+    if (this.currentMode === 'asset' && this.selectedAssetName?.endsWith('.mat')) {
+      this.renderMaterialMode(this.selectedAssetName, this.selectedAssetData);
+      return;
+    }
+
+    if (this.currentMode === 'asset') {
+      const info = document.createElement('div');
+      info.style.padding = '20px';
+      info.textContent = `Asset Selected: ${this.selectedAssetName}`;
+      this.appendChild(info);
       return;
     }
 
@@ -226,155 +250,6 @@ export class DetailsPanel extends HTMLElement {
     shadowCheck.addEventListener('change', (e) => {
       light.castShadows = (e.target as HTMLInputElement).checked;
     });
-  }
-
-  private renderMaterialUI(material: any) {
-    const section = document.createElement('div');
-    section.style.padding = '15px';
-    section.style.borderTop = '1px solid var(--border-color)';
-
-    const sectionTitle = document.createElement('div');
-    sectionTitle.textContent = 'MATERIAL';
-    sectionTitle.style.fontSize = '10px';
-    sectionTitle.style.fontWeight = 'bold';
-    sectionTitle.style.marginBottom = '10px';
-    sectionTitle.style.opacity = '0.6';
-    section.appendChild(sectionTitle);
-
-    const group = document.createElement('div');
-    group.className = 'input-group';
-    group.innerHTML = `
-      <div style="margin-bottom: 8px;">
-        <label>Base Color</label>
-        <input type="color" id="mat-color" value="${this.rgbToHex(material.baseColor)}">
-      </div>
-      <div style="margin-bottom: 8px;">
-        <label>Roughness</label>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <input type="range" id="mat-roughness-range" min="0" max="1" step="0.01" value="${material.roughness}" style="flex: 1;">
-          <input type="number" id="mat-roughness-num" min="0" max="1" step="0.01" value="${material.roughness}" style="width: 50px;">
-        </div>
-      </div>
-      <div style="margin-bottom: 8px;">
-        <label>Metallic</label>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <input type="range" id="mat-metallic-range" min="0" max="1" step="0.01" value="${material.metallic}" style="flex: 1;">
-          <input type="number" id="mat-metallic-num" min="0" max="1" step="0.01" value="${material.metallic}" style="width: 50px;">
-        </div>
-      </div>
-    `;
-
-    // Phase 33: Texture Maps Drop Zones
-    const texturesGroup = document.createElement('div');
-    texturesGroup.style.marginTop = '15px';
-    texturesGroup.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
-    texturesGroup.style.paddingTop = '10px';
-    texturesGroup.innerHTML = `
-      <div style="font-size: 10px; font-weight: bold; margin-bottom: 10px; opacity: 0.6;">TEXTURE MAPS</div>
-      <div style="display: flex; gap: 10px;">
-        <div id="drop-albedo" title="Drop Albedo/Color Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
-          Albedo<br>(Color)
-        </div>
-        <div id="drop-roughness" title="Drop Roughness Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
-          Roughness
-        </div>
-        <div id="drop-normal" title="Drop Normal Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
-          Normal
-        </div>
-      </div>
-    `;
-
-    section.appendChild(group);
-    section.appendChild(texturesGroup);
-    this.appendChild(section);
-
-    // Setup Drag & Drop Handlers for Texture Maps
-    const setupDropZone = (type: 'albedo' | 'roughness' | 'normal', elId: string) => {
-      const dropZone = texturesGroup.querySelector(elId) as HTMLElement;
-      if (!dropZone) return;
-
-      dropZone.addEventListener('dragover', (e: any) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'copy';
-        dropZone.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-        dropZone.style.borderColor = 'var(--accent-color)';
-      });
-
-      dropZone.addEventListener('dragleave', (e: any) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.style.backgroundColor = 'var(--bg-surface)';
-        dropZone.style.borderColor = 'var(--border-color)';
-      });
-
-      dropZone.addEventListener('drop', (e: any) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.style.backgroundColor = 'var(--bg-surface)';
-        dropZone.style.borderColor = 'var(--border-color)';
-
-        const file = e.dataTransfer?.files[0];
-        if (file && file.type.startsWith('image/')) {
-          const localUrl = URL.createObjectURL(file);
-
-          dropZone.style.backgroundImage = `url(${localUrl})`;
-          dropZone.style.backgroundSize = 'cover';
-          dropZone.style.backgroundPosition = 'center';
-          dropZone.innerHTML = ''; // Hide text when flooded with image preview
-
-          const eventPayload = {
-            type,
-            url: localUrl,
-            file,
-            material
-          };
-
-          // Temporarily dispatch globally to let `AppShell` or `UMeshComponent` link it or handle it in `main` / `AppShell` using the EventBus
-          // Wait, AppShell already implements this. Maybe let's emit a specific bus event so AppShell can intercept the exact slot
-          import('@game-creator/engine').then((engineModule) => {
-            engineModule.EventBus.emit('OnTextureDropped', eventPayload);
-          });
-        }
-      });
-    };
-
-    setupDropZone('albedo', '#drop-albedo');
-    setupDropZone('roughness', '#drop-roughness');
-    setupDropZone('normal', '#drop-normal');
-
-
-    const inputColor = group.querySelector('#mat-color') as HTMLInputElement;
-    if (inputColor) {
-      inputColor.addEventListener('input', (e) => {
-        const hex = (e.target as HTMLInputElement).value;
-        this.hexToRgb(hex, material.baseColor);
-      });
-    }
-
-    const roughRange = group.querySelector('#mat-roughness-range') as HTMLInputElement;
-    const roughNum = group.querySelector('#mat-roughness-num') as HTMLInputElement;
-    const metalRange = group.querySelector('#mat-metallic-range') as HTMLInputElement;
-    const metalNum = group.querySelector('#mat-metallic-num') as HTMLInputElement;
-
-    const updateRoughness = (val: string) => {
-      const v = parseFloat(val) || 0;
-      material.roughness = v;
-      roughRange.value = v.toString();
-      roughNum.value = v.toString();
-    };
-
-    const updateMetallic = (val: string) => {
-      const v = parseFloat(val) || 0;
-      material.metallic = v;
-      metalRange.value = v.toString();
-      metalNum.value = v.toString();
-    };
-
-    roughRange.addEventListener('input', (e) => updateRoughness((e.target as HTMLInputElement).value));
-    roughNum.addEventListener('input', (e) => updateRoughness((e.target as HTMLInputElement).value));
-    metalRange.addEventListener('input', (e) => updateMetallic((e.target as HTMLInputElement).value));
-    metalNum.addEventListener('input', (e) => updateMetallic((e.target as HTMLInputElement).value));
   }
 
   private rgbToHex(rgba: Float32Array): string {
@@ -569,8 +444,8 @@ export class DetailsPanel extends HTMLElement {
     slot.addEventListener('click', async () => {
       // In a real editor, this would open an asset picker.
       // For now, if a material is selected in Content Browser, we assign it.
-      if (this.currentMaterialPath) {
-        mesh.materialPath = this.currentMaterialPath;
+      if (this.selectedAssetName?.endsWith('.mat')) {
+        mesh.materialPath = `Materials/${this.selectedAssetName}`;
         slot.textContent = mesh.materialPath;
 
         // Phase 2 logic: Update resources
@@ -590,45 +465,123 @@ export class DetailsPanel extends HTMLElement {
     this.appendChild(section);
   }
 
-  private async renderMaterialAssetUI() {
-    const section = document.createElement('div');
-    section.style.padding = '15px';
+  private renderMaterialMode(fileName: string, data: any) {
+    if (!data) return;
+
+    const container = document.createElement('div');
+    container.style.padding = '15px';
 
     const header = document.createElement('div');
-    header.style.marginBottom = '15px';
+    header.style.marginBottom = '20px';
     header.innerHTML = `
-      <div style="font-size: 10px; color: var(--accent-color); font-weight: bold; margin-bottom: 4px;">MATERIAL ASSET</div>
-      <div style="font-size: 14px; font-weight: bold;">${this.currentMaterialPath}</div>
+      <div style="font-size: 10px; color: var(--accent-color); font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">Material Asset</div>
+      <div style="font-size: 16px; font-weight: bold;">${fileName}</div>
     `;
-    section.appendChild(header);
+    container.appendChild(header);
 
-    // Load material data from disk via FileSystem (complex, let's use ProjectSystem)
-    const { ProjectSystem } = await import('../Core/ProjectSystem');
-    const { UAssetManager, Engine } = await import('@game-creator/engine');
+    // Controls
+    const controls = document.createElement('div');
+    controls.className = 'input-group';
+    controls.style.display = 'flex';
+    controls.style.flexDirection = 'column';
+    controls.style.gap = '15px';
 
-    // We fetch the material instance from cache if it exists, so we edit it in memory
-    const device = Engine.getInstance().getRenderer().getDevice();
-    if (!device) return;
+    // Base Color
+    const colorRow = document.createElement('div');
+    colorRow.innerHTML = `
+      <label>Base Color</label>
+      <input type="color" id="mat-base-color" value="${this.vec4ToHex(data.baseColor)}">
+    `;
+    controls.appendChild(colorRow);
 
-    const material = await UAssetManager.getInstance().loadMaterial(this.currentMaterialPath!, device);
-    if (!material) return;
+    // Metallic
+    const metallicRow = document.createElement('div');
+    metallicRow.innerHTML = `
+      <label>Metallic</label>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="range" id="mat-metallic-range" min="0" max="1" step="0.01" value="${data.metallic}" style="flex: 1;">
+        <span id="mat-metallic-val" style="font-size: 11px; width: 30px;">${data.metallic}</span>
+      </div>
+    `;
+    controls.appendChild(metallicRow);
 
-    this.renderMaterialUI(material);
+    // Roughness
+    const roughnessRow = document.createElement('div');
+    roughnessRow.innerHTML = `
+      <label>Roughness</label>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <input type="range" id="mat-roughness-range" min="0" max="1" step="0.01" value="${data.roughness}" style="flex: 1;">
+        <span id="mat-roughness-val" style="font-size: 11px; width: 30px;">${data.roughness}</span>
+      </div>
+    `;
+    controls.appendChild(roughnessRow);
 
-    // Special: Add Auto-Save on change
-    section.addEventListener('input', async () => {
-      // Logic to save back to disk via ProjectSystem
-      // For now, let's keep it in memory
-      console.log("Material instance updated in memory:", material.name);
+    container.appendChild(controls);
 
-      // OPTIONAL: Persistence logic
-      /*
-      const data = material.serialize();
-      // Need a ProjectSystem.saveMaterial(path, data)
-      */
-    });
+    // Save Button
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save Changes';
+    saveBtn.style.marginTop = '25px';
+    saveBtn.style.width = '100%';
+    saveBtn.style.padding = '10px';
+    saveBtn.style.backgroundColor = 'var(--accent-color)';
+    saveBtn.style.color = 'white';
+    saveBtn.style.border = 'none';
+    saveBtn.style.borderRadius = '4px';
+    saveBtn.style.cursor = 'pointer';
+    saveBtn.style.fontWeight = 'bold';
+    saveBtn.style.textTransform = 'uppercase';
+    saveBtn.style.fontSize = '0.75rem';
 
-    this.appendChild(section);
+    saveBtn.onclick = async () => {
+      const success = await ProjectSystem.saveMaterialData(fileName, data);
+      if (success) {
+        EditorLogger.info(`Saved changes to ${fileName}`);
+        // Optionally notify engine to reload this material
+        EventBus.emit('RequestContentBrowserRefresh', {});
+      }
+    };
+
+    container.appendChild(saveBtn);
+    this.appendChild(container);
+
+    // Bindings
+    const baseColorInput = container.querySelector('#mat-base-color') as HTMLInputElement;
+    baseColorInput.oninput = (e) => {
+      const hex = (e.target as HTMLInputElement).value;
+      const rgb = this.hexToVec4(hex);
+      data.baseColor = rgb;
+    };
+
+    const metRange = container.querySelector('#mat-metallic-range') as HTMLInputElement;
+    const metVal = container.querySelector('#mat-metallic-val') as HTMLSpanElement;
+    metRange.oninput = (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      data.metallic = val;
+      metVal.textContent = val.toFixed(2);
+    };
+
+    const roughRange = container.querySelector('#mat-roughness-range') as HTMLInputElement;
+    const roughVal = container.querySelector('#mat-roughness-val') as HTMLSpanElement;
+    roughRange.oninput = (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      data.roughness = val;
+      roughVal.textContent = val.toFixed(2);
+    };
+  }
+
+  private vec4ToHex(v: number[]): string {
+    const r = Math.round(v[0] * 255).toString(16).padStart(2, '0');
+    const g = Math.round(v[1] * 255).toString(16).padStart(2, '0');
+    const b = Math.round(v[2] * 255).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  }
+
+  private hexToVec4(hex: string): number[] {
+    const r = parseInt(hex.slice(1, 3), 16) / 255;
+    const g = parseInt(hex.slice(3, 5), 16) / 255;
+    const b = parseInt(hex.slice(5, 7), 16) / 255;
+    return [r, g, b, 1.0];
   }
 }
 
