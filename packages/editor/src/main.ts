@@ -8,6 +8,8 @@ import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
 
+export let globalEngine: Engine | null = null;
+
 async function initEngine() {
   const viewport = document.querySelector('gc-viewport') as any; // Cast for custom method access
   if (viewport) {

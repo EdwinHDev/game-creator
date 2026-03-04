@@ -114,13 +114,13 @@ export class UMeshComponent extends USceneComponent {
    * Phase 29.1: Texture Loading
    * Asynchronously loads an image from an URL and creates a WebGPU texture.
    */
-  public async loadTexture(url: string, device: GPUDevice): Promise<void> {
+  public async loadTexture(url: string, device: GPUDevice, type: 'albedo' | 'roughness' | 'normal' = 'albedo'): Promise<void> {
     try {
       const response = await fetch(url, { mode: 'cors' });
       const blob = await response.blob();
       const imageBitmap = await createImageBitmap(blob);
 
-      this.baseColorTexture = device.createTexture({
+      const newTexture = device.createTexture({
         size: [imageBitmap.width, imageBitmap.height, 1],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
@@ -128,12 +128,23 @@ export class UMeshComponent extends USceneComponent {
 
       device.queue.copyExternalImageToTexture(
         { source: imageBitmap },
-        { texture: this.baseColorTexture },
+        { texture: newTexture },
         [imageBitmap.width, imageBitmap.height]
       );
 
+      // Link to appropriate UMaterial slot
+      if (this.material) {
+        if (type === 'albedo') this.material.baseColorTexture = newTexture;
+        else if (type === 'roughness') this.material.roughnessTexture = newTexture;
+        else if (type === 'normal') this.material.normalTexture = newTexture;
+
+        this.material.isDirty = true;
+      } else {
+        console.warn(`No material found to link texture slot ${type} onto mesh ${this.owner?.name}`);
+      }
+
     } catch (error) {
-      console.error(`Failed to load texture at path ${url}:`, error);
+      console.error(`Failed to load texture at path ${url} for slot ${type}:`, error);
     }
   }
 

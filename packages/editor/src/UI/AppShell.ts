@@ -1,4 +1,4 @@
-import { EventBus, UDirectionalLightComponent } from '@game-creator/engine';
+import { EventBus, UDirectionalLightComponent, Engine, UMeshComponent } from '@game-creator/engine';
 import './Resizer';
 import './Viewport';
 import './TopBar';
@@ -29,6 +29,59 @@ export class AppShell extends HTMLElement {
           this.selectedActor = null;
         } else {
           console.warn(`Deletion blocked for protected actor: ${this.selectedActor.name}`);
+        }
+      }
+    });
+
+    // Phase 32: Drag & Drop Texture Importer setup
+    const contentBrowser = this.querySelector('.content-browser');
+    if (contentBrowser) {
+      contentBrowser.addEventListener('dragover', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        contentBrowser.classList.add('drag-active');
+      });
+
+      contentBrowser.addEventListener('dragleave', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        contentBrowser.classList.remove('drag-active');
+      });
+
+      contentBrowser.addEventListener('drop', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        contentBrowser.classList.remove('drag-active');
+
+        const file = e.dataTransfer?.files[0];
+        if (file && file.type.startsWith('image/')) {
+          const localUrl = URL.createObjectURL(file);
+
+          if (this.selectedActor) {
+            const mesh = this.selectedActor.getComponent(UMeshComponent);
+            if (mesh) {
+              const engine = Engine.getInstance();
+              if (engine && engine.getRenderer() && engine.getRenderer().getDevice()) {
+                mesh.loadTexture(localUrl, engine.getRenderer().getDevice()!);
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Phase 33: Listen for DetailsPanel PBR Texture assignment events globally
+    EventBus.on('OnTextureDropped', (payload: any) => {
+      const { type, url } = payload;
+
+      if (this.selectedActor) {
+        const mesh = this.selectedActor.getComponent(UMeshComponent);
+        if (mesh) {
+          const engine = Engine.getInstance();
+          if (engine && engine.getRenderer() && engine.getRenderer().getDevice()) {
+            mesh.loadTexture(url, engine.getRenderer().getDevice()!, type); // Passing `type` to indicate which slot
+          }
         }
       }
     });

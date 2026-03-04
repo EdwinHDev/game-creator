@@ -55,16 +55,17 @@ export class Renderer {
   private sceneBindGroup: GPUBindGroup | null = null;
   private skyBindGroup: GPUBindGroup | null = null;
 
+  // Phase 29.1 / 33.1: Textures
+  private defaultSampler: GPUSampler | null = null;
+  private defaultWhiteTexture: GPUTexture | null = null;
+  private dummyNormalTexture: GPUTexture | null = null;
+
   private shadowPipeline: GPURenderPipeline | null = null;
   private shadowTexture: GPUTexture | null = null;
   private shadowView: GPUTextureView | null = null;
   private shadowSampler: GPUSampler | null = null;
 
   public viewProjMatrix: mat4 = mat4.create();
-
-  // Texturing fallbacks
-  private defaultWhiteTexture: GPUTexture | null = null;
-  private defaultSampler: GPUSampler | null = null;
 
   constructor() { }
 
@@ -120,8 +121,31 @@ export class Renderer {
       primitive: { topology: 'triangle-list' },
     });
 
+    // Layouts must match exactly the Shader groups
+    const materialBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+      ]
+    });
+
+    const sceneBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
+      ]
+    });
+
+    const pipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [materialBindGroupLayout, sceneBindGroupLayout]
+    });
+
     this.trianglePipeline = this.device.createRenderPipeline({
-      layout: 'auto',
+      layout: pipelineLayout,
       vertex: { module: standardModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: standardModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
@@ -218,6 +242,19 @@ export class Renderer {
     this.device.queue.writeTexture(
       { texture: this.defaultWhiteTexture },
       new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+
+    // Phase 33.1: Dummy Normal Map pointing straight up (Z-axis in Tangent space)
+    this.dummyNormalTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.dummyNormalTexture },
+      new Uint8Array([128, 128, 255, 255]),
       { bytesPerRow: 4, rowsPerImage: 1 },
       [1, 1, 1]
     );
@@ -425,13 +462,25 @@ export class Renderer {
     // data[38], data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
 
-    // Phase 29.1: Bind textures alongside material uniforms
-    const texView = component.baseColorTexture ? component.baseColorTexture.createView() : this.defaultWhiteTexture!.createView();
-    const cacheKey = component.id + (component.baseColorTexture ? '_customTex' : '_defaultTex');
+    // Phase 29.1 / 33.1: Bind textures alongside material uniforms
+    const albedoView = component.material?.baseColorTexture ? component.material.baseColorTexture.createView() : this.defaultWhiteTexture!.createView();
+    const roughnessView = component.material?.roughnessTexture ? component.material.roughnessTexture.createView() : this.defaultWhiteTexture!.createView();
+    const normalView = component.material?.normalTexture ? component.material.normalTexture.createView() : this.dummyNormalTexture!.createView();
+
+    const cacheKey = component.id + '_material_group';
+
+    // Dynamic Reconstruction when Drag & Drop happens
+    if (component.material && component.material.isDirty) {
+      this.bindGroups.delete(cacheKey);
+      component.material.isDirty = false;
+    }
+
     const bindGroup = this.getOrCreateBindGroup(cacheKey, this.trianglePipeline.getBindGroupLayout(0), [
       { binding: 0, resource: { buffer } },
-      { binding: 1, resource: texView },
-      { binding: 2, resource: this.defaultSampler! }
+      { binding: 1, resource: this.defaultSampler! },
+      { binding: 2, resource: albedoView },
+      { binding: 3, resource: roughnessView },
+      { binding: 4, resource: normalView }
     ]);
 
     pass.setPipeline(this.trianglePipeline);

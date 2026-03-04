@@ -6,8 +6,10 @@ struct Uniforms {
     metallic: f32,
 }
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
-@group(0) @binding(2) var baseColorSampler: sampler;
+@group(0) @binding(1) var baseColorSampler: sampler;
+@group(0) @binding(2) var albedoMap: texture_2d<f32>;
+@group(0) @binding(3) var roughnessMap: texture_2d<f32>;
+@group(0) @binding(4) var normalMap: texture_2d<f32>;
 
 struct SceneUniforms {
     lightDirection: vec4<f32>,
@@ -82,9 +84,13 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    // Phase 29.1: Texture Retrieval
-    let texColor = textureSample(baseColorTexture, baseColorSampler, in.uv);
+    // Phase 29.1 / 33.1: Texture Retrieval
+    let texColor = textureSample(albedoMap, baseColorSampler, in.uv);
+    let texRoughness = textureSample(roughnessMap, baseColorSampler, in.uv).r;
+    let dummyNormalRead = textureSample(normalMap, baseColorSampler, in.uv);
+    
     let diffuseColor = uniforms.baseColor.rgb * texColor.rgb;
+    let finalRoughness = uniforms.roughness * texRoughness;
 
     let cameraPos = scene.cameraPosition.xyz;
     let N = normalize(in.normal);
@@ -97,7 +103,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // Phase 28: Using correct ambient F0 for metals (blended with new diffuse tracking)
     F0 = mix(F0, diffuseColor, uniforms.metallic);
 
-    let NDF = DistributionGGX(N, H, uniforms.roughness);
+    let NDF = DistributionGGX(N, H, finalRoughness);
     let G = GeometrySmith(N, V, L, uniforms.roughness);
     let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
@@ -122,22 +128,22 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let specularGain = mix(20.0, 0.0, uniforms.roughness);
     let directLighting = (kD * diffuseColor / PI + specular * specularGain) * scene.lightColor.rgb * NdotL * shadowVisibility;
     
-    // Phase 26.1 / 31.3: Dynamic Sky IBL Calibration
-    // Desaturated fill colors to prevent neon blue shadows on textured materials
+    // Phase 26.1 / 31.3 / 32.1: Dynamic Sky IBL Calibration
+    // Desaturated fill colors bumped in brightness to prevent overly dark shadows
     let sunY = scene.lightDirection.y;
     var skyColor: vec3<f32>;
-    let groundColor = vec3<f32>(0.02, 0.02, 0.02); // Darker ground bounce
+    let groundColor = vec3<f32>(0.08, 0.08, 0.08); // Lighter ground bounce
 
     if (sunY < -0.1) {
-        skyColor = vec3<f32>(0.05, 0.06, 0.08); // Desaturated dark blue day
+        skyColor = vec3<f32>(0.2, 0.22, 0.25); // Desaturated but brighter blue day fill
     } else if (sunY < 0.3) {
         let t = (sunY + 0.1) / 0.4;
-        skyColor = mix(vec3<f32>(0.05, 0.06, 0.08), vec3<f32>(0.08, 0.04, 0.06), t); // Desaturated sunset
+        skyColor = mix(vec3<f32>(0.2, 0.22, 0.25), vec3<f32>(0.15, 0.10, 0.12), t); // Desaturated sunset
     } else if (sunY < 0.6) {
         let t = (sunY - 0.3) / 0.3;
-        skyColor = mix(vec3<f32>(0.08, 0.04, 0.06), vec3<f32>(0.0, 0.0, 0.01), t); // Dusk to night
+        skyColor = mix(vec3<f32>(0.15, 0.10, 0.12), vec3<f32>(0.02, 0.02, 0.03), t); // Dusk to night
     } else {
-        skyColor = vec3<f32>(0.0, 0.0, 0.01); // Dark night
+        skyColor = vec3<f32>(0.02, 0.02, 0.03); // Night fill
     }
 
     let upFactor = dot(N, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
@@ -151,7 +157,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     // The core ambient illumination (Metals have 0 diffuse ambient)
     let ambientDiffuse = hemiLight * diffuseColor * (1.0 - uniforms.metallic);
-    let ambient = ambientDiffuse + ambientReflection;
+    
+    // Phase 32.1: 1.5x Multiplier to lift shadows globally
+    let ambient = (ambientDiffuse + ambientReflection) * 1.5;
 
     // Phase 30.1: Removed procedural sunDisk - purely relying on Cook-Torrance directLighting.
     let color = ambient + directLighting;

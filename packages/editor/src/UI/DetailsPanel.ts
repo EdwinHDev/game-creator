@@ -244,8 +244,86 @@ export class DetailsPanel extends HTMLElement {
         </div>
       </div>
     `;
+
+    // Phase 33: Texture Maps Drop Zones
+    const texturesGroup = document.createElement('div');
+    texturesGroup.style.marginTop = '15px';
+    texturesGroup.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+    texturesGroup.style.paddingTop = '10px';
+    texturesGroup.innerHTML = `
+      <div style="font-size: 10px; font-weight: bold; margin-bottom: 10px; opacity: 0.6;">TEXTURE MAPS</div>
+      <div style="display: flex; gap: 10px;">
+        <div id="drop-albedo" title="Drop Albedo/Color Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
+          Albedo<br>(Color)
+        </div>
+        <div id="drop-roughness" title="Drop Roughness Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
+          Roughness
+        </div>
+        <div id="drop-normal" title="Drop Normal Map Here" style="flex: 1; aspect-ratio: 1; border: 1px dashed var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 9px; text-align: center; cursor: pointer; background: var(--bg-surface); transition: background 0.2s, border-color 0.2s;">
+          Normal
+        </div>
+      </div>
+    `;
+
     section.appendChild(group);
+    section.appendChild(texturesGroup);
     this.appendChild(section);
+
+    // Setup Drag & Drop Handlers for Texture Maps
+    const setupDropZone = (type: 'albedo' | 'roughness' | 'normal', elId: string) => {
+      const dropZone = texturesGroup.querySelector(elId) as HTMLElement;
+      if (!dropZone) return;
+
+      dropZone.addEventListener('dragover', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'copy';
+        dropZone.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        dropZone.style.borderColor = 'var(--accent-color)';
+      });
+
+      dropZone.addEventListener('dragleave', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.style.backgroundColor = 'var(--bg-surface)';
+        dropZone.style.borderColor = 'var(--border-color)';
+      });
+
+      dropZone.addEventListener('drop', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.style.backgroundColor = 'var(--bg-surface)';
+        dropZone.style.borderColor = 'var(--border-color)';
+
+        const file = e.dataTransfer?.files[0];
+        if (file && file.type.startsWith('image/')) {
+          const localUrl = URL.createObjectURL(file);
+
+          dropZone.style.backgroundImage = `url(${localUrl})`;
+          dropZone.style.backgroundSize = 'cover';
+          dropZone.style.backgroundPosition = 'center';
+          dropZone.innerHTML = ''; // Hide text when flooded with image preview
+
+          const eventPayload = {
+            type,
+            url: localUrl,
+            file,
+            material
+          };
+
+          // Temporarily dispatch globally to let `AppShell` or `UMeshComponent` link it or handle it in `main` / `AppShell` using the EventBus
+          // Wait, AppShell already implements this. Maybe let's emit a specific bus event so AppShell can intercept the exact slot
+          import('@game-creator/engine').then((engineModule) => {
+            engineModule.EventBus.emit('OnTextureDropped', eventPayload);
+          });
+        }
+      });
+    };
+
+    setupDropZone('albedo', '#drop-albedo');
+    setupDropZone('roughness', '#drop-roughness');
+    setupDropZone('normal', '#drop-normal');
+
 
     const inputColor = group.querySelector('#mat-color') as HTMLInputElement;
     if (inputColor) {
