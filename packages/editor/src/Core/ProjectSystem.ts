@@ -322,4 +322,62 @@ export class ProjectSystem {
       return false;
     }
   }
+
+  /**
+   * Imports external files into the project, categorizing them into Textures or Models.
+   */
+  public static async importFiles(): Promise<boolean> {
+    if (!this.directoryHandle) return false;
+
+    try {
+      const fileHandles = await (window as any).showOpenFilePicker({
+        multiple: true,
+        types: [
+          {
+            description: 'Assets (Images & Models)',
+            accept: {
+              'image/*': ['.png', '.jpg', '.jpeg', '.tga', '.webp'],
+              'model/*': ['.glb', '.gltf', '.obj']
+            }
+          }
+        ]
+      });
+
+      if (!fileHandles || fileHandles.length === 0) return false;
+
+      const assetsHandle = await this.directoryHandle.getDirectoryHandle('Assets', { create: true });
+      const texturesHandle = await assetsHandle.getDirectoryHandle('Textures', { create: true });
+      const modelsHandle = await assetsHandle.getDirectoryHandle('Models', { create: true });
+
+      let importedCount = 0;
+
+      for (const handle of fileHandles) {
+        const file = await handle.getFile();
+        const name = file.name;
+        const ext = name.split('.').pop()?.toLowerCase() || '';
+
+        const isModel = ['glb', 'gltf', 'obj'].includes(ext);
+        const targetDir = isModel ? modelsHandle : texturesHandle;
+        const subfolderName = isModel ? 'Models' : 'Textures';
+
+        try {
+          const newFileHandle = await targetDir.getFileHandle(name, { create: true });
+          const writable = await (newFileHandle as any).createWritable();
+          await writable.write(await file.arrayBuffer());
+          await writable.close();
+
+          EditorLogger.info(`Imported ${name} to /Assets/${subfolderName}`);
+          importedCount++;
+        } catch (e) {
+          EditorLogger.error(`Failed to import ${name}`, e);
+        }
+      }
+
+      return importedCount > 0;
+    } catch (e: any) {
+      if (e.name === 'AbortError') return false;
+      EditorLogger.error("ProjectSystem: Failed to import files", e);
+      return false;
+    }
+  }
 }

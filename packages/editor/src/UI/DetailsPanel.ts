@@ -518,6 +518,26 @@ export class DetailsPanel extends HTMLElement {
 
     container.appendChild(controls);
 
+    // Texture Slots (Phase 47)
+    const textureHeader = document.createElement('div');
+    textureHeader.textContent = 'Texture Maps';
+    textureHeader.style.fontSize = '10px';
+    textureHeader.style.fontWeight = 'bold';
+    textureHeader.style.marginTop = '10px';
+    textureHeader.style.opacity = '0.6';
+    textureHeader.style.textTransform = 'uppercase';
+    controls.appendChild(textureHeader);
+
+    if (!data.textures) data.textures = { albedo: "", roughness: "", normal: "" };
+
+    const albedoSlot = this.createTextureSlot('Albedo (Base Color)', data.textures.albedo, (path: string) => data.textures.albedo = path);
+    const normalSlot = this.createTextureSlot('Normal Map', data.textures.normal, (path: string) => data.textures.normal = path);
+    const roughSlot = this.createTextureSlot('Roughness Map', data.textures.roughness, (path: string) => data.textures.roughness = path);
+
+    controls.appendChild(albedoSlot);
+    controls.appendChild(normalSlot);
+    controls.appendChild(roughSlot);
+
     // Save Button
     const saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save Changes';
@@ -582,6 +602,62 @@ export class DetailsPanel extends HTMLElement {
     const g = parseInt(hex.slice(3, 5), 16) / 255;
     const b = parseInt(hex.slice(5, 7), 16) / 255;
     return [r, g, b, 1.0];
+  }
+
+  private createTextureSlot(slotName: string, currentPath: string, onDrop: (path: string) => void): HTMLElement {
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.marginBottom = '10px';
+
+    const label = document.createElement('label');
+    label.textContent = slotName;
+    label.style.fontSize = '0.75rem';
+    label.style.marginBottom = '4px';
+
+    const dropZone = document.createElement('div');
+    dropZone.style.height = '40px';
+    dropZone.style.border = '1px dashed var(--border-color)';
+    dropZone.style.backgroundColor = 'var(--bg-base)';
+    dropZone.style.display = 'flex';
+    dropZone.style.alignItems = 'center';
+    dropZone.style.padding = '0 10px';
+    dropZone.style.fontSize = '0.7rem';
+    dropZone.style.borderRadius = '4px';
+    dropZone.style.color = currentPath ? 'var(--text-main)' : 'var(--text-muted)';
+    dropZone.textContent = currentPath ? currentPath.split(/[/\\]/).pop()! : 'Drop Texture Here...';
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--accent-color)';
+      dropZone.style.backgroundColor = 'rgba(255,255,255,0.05)';
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.style.borderColor = 'var(--border-color)';
+      dropZone.style.backgroundColor = 'var(--bg-base)';
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border-color)';
+      dropZone.style.backgroundColor = 'var(--bg-base)';
+      const dataStr = e.dataTransfer?.getData('application/json');
+      if (dataStr) {
+        try {
+          const dragData = JSON.parse(dataStr);
+          if (dragData.type === 'texture') {
+            dropZone.textContent = dragData.name;
+            dropZone.style.color = 'var(--text-main)';
+            onDrop(dragData.path);
+          }
+        } catch (err) {
+          EditorLogger.error("Failed to parse drop data", err);
+        }
+      }
+    });
+
+    container.appendChild(label);
+    container.appendChild(dropZone);
+    return container;
   }
 }
 

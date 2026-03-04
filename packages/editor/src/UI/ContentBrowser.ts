@@ -68,8 +68,15 @@ export class ContentBrowser extends HTMLElement {
     const importBtn = this.createActionButton('+ Import');
     const newMatBtn = this.createActionButton('+ New Material');
 
-    importBtn.addEventListener('click', () => {
-      alert('Import feature coming soon!');
+    importBtn.addEventListener('click', async () => {
+      try {
+        const success = await ProjectSystem.importFiles();
+        if (success) {
+          this.refreshContent();
+        }
+      } catch (e) {
+        EditorLogger.error("Error importing files:", e);
+      }
     });
 
     newMatBtn.addEventListener('click', () => {
@@ -339,6 +346,23 @@ export class ContentBrowser extends HTMLElement {
     });
 
     this.contentArea.appendChild(item);
+
+    // Drag & Drop support (Phase 47)
+    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.tga')) {
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        const assetData = {
+          type: 'texture',
+          name: name,
+          path: `Assets/Textures/${name}`
+        };
+        e.dataTransfer?.setData('application/json', JSON.stringify(assetData));
+        item.style.opacity = '0.5';
+      });
+      item.addEventListener('dragend', () => {
+        item.style.opacity = '1';
+      });
+    }
   }
 
 }
