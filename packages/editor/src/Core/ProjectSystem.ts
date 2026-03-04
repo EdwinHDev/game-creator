@@ -8,6 +8,7 @@ export class ProjectSystem {
   public static directoryHandle: FileSystemDirectoryHandle | null = null;
   public static projectName: string = 'Untitled Project';
   public static hasUnsavedChanges: boolean = false;
+  public static dirtyMaterials: Map<string, any> = new Map();
 
   public static markUnsaved() {
     if (!this.hasUnsavedChanges) {
@@ -18,7 +19,13 @@ export class ProjectSystem {
 
   public static clearUnsaved() {
     this.hasUnsavedChanges = false;
+    this.dirtyMaterials.clear();
     document.title = `Game Creator - ${this.projectName || 'Untitled'}`;
+  }
+
+  public static markMaterialDirty(fileName: string, data: any) {
+    this.dirtyMaterials.set(fileName, data);
+    this.markUnsaved();
   }
 
   /**
@@ -131,6 +138,11 @@ export class ProjectSystem {
       const writable = await (sceneFileHandle as any).createWritable();
       await writable.write(JSON.stringify(worldData, null, 2));
       await writable.close();
+
+      // NEW: Save all dirty materials in memory synchronously during project save
+      for (const [matName, matData] of this.dirtyMaterials.entries()) {
+        await this.saveMaterialData(matName, matData);
+      }
 
       EditorLogger.info(`Project saved: ${this.projectName}`);
       this.clearUnsaved();
@@ -470,6 +482,6 @@ export class ProjectSystem {
 window.addEventListener('beforeunload', (e) => {
   if (ProjectSystem.hasUnsavedChanges) {
     e.preventDefault();
-    e.returnValue = 'Tienes cambios sin guardar. ¿Seguro que quieres salir?';
+    e.returnValue = 'Tienes cambios sin guardar. Si sales, perderás las modificaciones en la escena y los materiales.';
   }
 });

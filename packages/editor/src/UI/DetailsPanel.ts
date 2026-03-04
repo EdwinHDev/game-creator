@@ -592,17 +592,17 @@ export class DetailsPanel extends HTMLElement {
 
     const albedoSlot = this.createTextureSlot('Albedo (Base Color)', data.textures.albedo, (path: string) => {
       data.textures.albedo = path;
-      applyMaterialChange();
+      applyLiveChange();
       this.render();
     });
     const normalSlot = this.createTextureSlot('Normal Map', data.textures.normal, (path: string) => {
       data.textures.normal = path;
-      applyMaterialChange();
+      applyLiveChange();
       this.render();
     });
     const roughSlot = this.createTextureSlot('Roughness Map', data.textures.roughness, (path: string) => {
       data.textures.roughness = path;
-      applyMaterialChange();
+      applyLiveChange();
       this.render();
     });
 
@@ -610,14 +610,14 @@ export class DetailsPanel extends HTMLElement {
     controls.appendChild(normalSlot);
     controls.appendChild(roughSlot);
 
-    const applyMaterialChange = async () => {
-      ProjectSystem.markUnsaved();
-      await ProjectSystem.saveMaterialData(fileName, data);
+    const applyLiveChange = async () => {
+      // 1. Enqueue for future save
+      ProjectSystem.markMaterialDirty(fileName, data);
 
+      // 2. Live update for all actors using this material
       const { UAssetManager, Engine } = await import('@game-creator/engine');
       const device = Engine.getInstance().getRenderer().getDevice();
       if (device) {
-        // Live update for all actors using this material
         await UAssetManager.getInstance().applyMaterialDataToCache(`Materials/${fileName}`, data, device);
       }
     };
@@ -630,7 +630,7 @@ export class DetailsPanel extends HTMLElement {
       const hex = (e.target as HTMLInputElement).value;
       const rgb = this.hexToVec4(hex);
       data.baseColor = rgb;
-      applyMaterialChange();
+      applyLiveChange();
     };
 
     const metRange = container.querySelector('#mat-metallic-range') as HTMLInputElement;
@@ -639,7 +639,7 @@ export class DetailsPanel extends HTMLElement {
       const val = parseFloat((e.target as HTMLInputElement).value);
       data.metallic = val;
       metVal.textContent = val.toFixed(2);
-      applyMaterialChange();
+      applyLiveChange();
     };
 
     const roughRange = container.querySelector('#mat-roughness-range') as HTMLInputElement;
@@ -648,7 +648,7 @@ export class DetailsPanel extends HTMLElement {
       const val = parseFloat((e.target as HTMLInputElement).value);
       data.roughness = val;
       roughVal.textContent = val.toFixed(2);
-      applyMaterialChange();
+      applyLiveChange();
     };
   }
 
