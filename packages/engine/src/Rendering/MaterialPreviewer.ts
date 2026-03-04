@@ -17,6 +17,16 @@ export class MaterialPreviewer {
   private indexCount: number = 0;
   private isDestroyed: boolean = false;
 
+  private depthTexture: GPUTexture | null = null;
+  private currentMaterial: UMaterial | null = null;
+  private isRendering: boolean = false;
+
+  private rotX: number = 0;
+  private rotY: number = 0;
+  private isDragging: boolean = false;
+  private lastMouseX: number = 0;
+  private lastMouseY: number = 0;
+
   private materialUniformBuffer: GPUBuffer | null = null;
   private sceneUniformBuffer: GPUBuffer | null = null;
 
@@ -73,6 +83,35 @@ export class MaterialPreviewer {
 
     this.initGeometry();
     this.initPipeline();
+
+    this.depthTexture = this.device.createTexture({
+      size: [256, 256],
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    // Mouse Interaction
+    canvas.addEventListener('mousedown', (e) => {
+      this.isDragging = true;
+      this.lastMouseX = e.clientX;
+      this.lastMouseY = e.clientY;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!this.isDragging) return;
+      const deltaX = e.clientX - this.lastMouseX;
+      const deltaY = e.clientY - this.lastMouseY;
+      this.rotY += deltaX * 0.01;
+      this.rotX += deltaY * 0.01;
+      // Clamp X rotation to avoid flipping
+      this.rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.rotX));
+      this.lastMouseX = e.clientX;
+      this.lastMouseY = e.clientY;
+    });
+
+    window.addEventListener('mouseup', () => {
+      this.isDragging = false;
+    });
   }
 
   private createSolidTexture(color: number[]): GPUTexture {
@@ -191,17 +230,46 @@ export class MaterialPreviewer {
   }
 
   public render(material: UMaterial) {
-    if (!this.pipeline || !this.vertexBuffer || !this.indexBuffer) return;
+    this.currentMaterial = material;
+    if (!this.isRendering && !this.isDestroyed) {
+      this.isRendering = true;
+      this.renderLoop();
+    }
+  }
+
+  private renderLoop = () => {
+    if (this.isDestroyed || !this.pipeline || !this.currentMaterial || !this.depthTexture || !this.vertexBuffer || !this.indexBuffer) {
+      this.isRendering = false;
+      return;
+    }
+
+    // 0. Auto-Resize Canvas & Aspect Ratio
+    const canvas = this.context.canvas as HTMLCanvasElement;
+    if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+
+      // Recreate depth texture on resize
+      this.depthTexture.destroy();
+      this.depthTexture = this.device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+    }
+
+    const aspect = canvas.width / canvas.height;
 
     // 1. Update Uniforms
     const modelMatrix = mat4.create();
-    mat4.rotateY(modelMatrix, modelMatrix, Date.now() * 0.001); // Auto-rotation for preview
+    mat4.rotateX(modelMatrix, modelMatrix, this.rotX);
+    mat4.rotateY(modelMatrix, modelMatrix, this.rotY);
 
     const viewMatrix = mat4.create();
-    mat4.lookAt(viewMatrix, [0, 0, 3], [0, 0, 0], [0, 1, 0]);
+    mat4.lookAt(viewMatrix, [0, 0, 3.2], [0, 0, 0], [0, 1, 0]);
 
     const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, Math.PI / 4, 1.0, 0.1, 10.0);
+    mat4.perspective(projectionMatrix, Math.PI / 4, aspect, 0.1, 10.0);
 
     const mvpMatrix = mat4.create();
     mat4.multiply(mvpMatrix, projectionMatrix, viewMatrix);
@@ -211,18 +279,18 @@ export class MaterialPreviewer {
     const matData = new Float32Array(40); // 160 bytes / 4
     matData.set(mvpMatrix, 0);
     matData.set(modelMatrix, 16);
-    matData.set(material.baseColor, 32);
-    matData[36] = material.roughness;
-    matData[37] = material.metallic;
+    matData.set(this.currentMaterial.baseColor, 32);
+    matData[36] = this.currentMaterial.roughness;
+    matData[37] = this.currentMaterial.metallic;
     this.device.queue.writeBuffer(this.materialUniformBuffer!, 0, matData);
 
-    // Scene Data
+    // Scene Data (Stronger frontal lighting for analysis)
     const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([1, -1, -1, 0], 0); // lightDirection (Y is down)
-    sceneData.set([1, 1, 1, 1], 4);   // lightColor
-    sceneData.set(mat4.create(), 8);  // lightVP (dummy)
-    sceneData.set([0, 0, 3, 1], 24);  // cameraPosition
-    sceneData.set(mat4.create(), 28); // invVP (dummy)
+    sceneData.set([-0.5, -1, 1, 0], 0); // lightDirection (Front/Above)
+    sceneData.set([3, 3, 3, 1], 4);     // lightColor (Stronger)
+    sceneData.set(mat4.create(), 8);   // lightVP (dummy)
+    sceneData.set([0, 0, 3.2, 1], 24); // cameraPosition
+    sceneData.set(mat4.create(), 28);  // invVP (dummy)
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
     // 2. Bind Groups
@@ -231,9 +299,9 @@ export class MaterialPreviewer {
       entries: [
         { binding: 0, resource: { buffer: this.materialUniformBuffer! } },
         { binding: 1, resource: this.defaultSampler },
-        { binding: 2, resource: material.baseColorTexture?.createView() || this.fallbackWhiteTexture.createView() },
-        { binding: 3, resource: material.roughnessTexture?.createView() || this.fallbackWhiteTexture.createView() },
-        { binding: 4, resource: material.normalTexture?.createView() || this.fallbackFlatNormalTexture.createView() },
+        { binding: 2, resource: this.currentMaterial.baseColorTexture?.createView() || this.fallbackWhiteTexture.createView() },
+        { binding: 3, resource: this.currentMaterial.roughnessTexture?.createView() || this.fallbackWhiteTexture.createView() },
+        { binding: 4, resource: this.currentMaterial.normalTexture?.createView() || this.fallbackFlatNormalTexture.createView() },
       ]
     });
 
@@ -247,12 +315,6 @@ export class MaterialPreviewer {
     });
 
     // 3. Render Pass
-    const depthTexture = this.device.createTexture({
-      size: [256, 256],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
     const commandEncoder = this.device.createCommandEncoder();
     const pass = commandEncoder.beginRenderPass({
       colorAttachments: [{
@@ -262,7 +324,7 @@ export class MaterialPreviewer {
         storeOp: 'store',
       }],
       depthStencilAttachment: {
-        view: depthTexture.createView(),
+        view: this.depthTexture.createView(),
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',
@@ -272,21 +334,22 @@ export class MaterialPreviewer {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, matBindGroup);
     pass.setBindGroup(1, sceneBindGroup);
-    pass.setVertexBuffer(0, this.vertexBuffer);
-    pass.setIndexBuffer(this.indexBuffer, 'uint16');
+    pass.setVertexBuffer(0, this.vertexBuffer!);
+    pass.setIndexBuffer(this.indexBuffer!, 'uint16');
     pass.drawIndexed(this.indexCount);
     pass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
 
-    // Request next frame for rotation if not destroyed
+    // Request next frame if not destroyed
     if (!this.isDestroyed) {
-      requestAnimationFrame(() => this.render(material));
+      requestAnimationFrame(this.renderLoop);
     }
   }
 
   public destroy() {
     this.isDestroyed = true;
+    this.isRendering = false;
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.materialUniformBuffer?.destroy();
@@ -294,5 +357,6 @@ export class MaterialPreviewer {
     this.fallbackWhiteTexture?.destroy();
     this.fallbackFlatNormalTexture?.destroy();
     this.dummyShadowTexture?.destroy();
+    this.depthTexture?.destroy();
   }
 }
