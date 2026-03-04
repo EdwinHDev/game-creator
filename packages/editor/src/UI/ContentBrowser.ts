@@ -284,7 +284,7 @@ export class ContentBrowser extends HTMLElement {
       if (entry.kind === 'file') {
         // Si es archivo, aplicamos los filtros de las pestañas
         if (this.shouldShowFile(name, this.currentTab)) {
-          this.createFileItem(name, entry);
+          await this.createFileItem(name, entry, dirHandle);
         }
       } else if (entry.kind === 'directory') {
         // Si es una subcarpeta (ej. 'Materials'), entramos recursivamente a buscar más archivos
@@ -302,10 +302,10 @@ export class ContentBrowser extends HTMLElement {
     return false;
   }
 
-  private createFileItem(name: string, _entry: any) {
+  private async createFileItem(name: string, entry: any, dirHandle: FileSystemDirectoryHandle) {
     const item = document.createElement('div');
     item.style.width = '80px';
-    item.style.height = '100px';
+    item.style.minHeight = '100px';
     item.style.display = 'flex';
     item.style.flexDirection = 'column';
     item.style.alignItems = 'center';
@@ -313,18 +313,105 @@ export class ContentBrowser extends HTMLElement {
     item.style.cursor = 'pointer';
     item.style.borderRadius = '4px';
     item.style.transition = 'background-color 0.2s';
+    item.style.position = 'relative';
 
-    item.onmouseenter = () => item.style.backgroundColor = 'rgba(255,255,255,0.05)';
-    item.onmouseleave = () => item.style.backgroundColor = 'transparent';
+    // Delete button (hidden by default)
+    const deleteBtn = document.createElement('button');
+    deleteBtn.innerHTML = '✖';
+    deleteBtn.style.position = 'absolute';
+    deleteBtn.style.top = '-4px';
+    deleteBtn.style.right = '-4px';
+    deleteBtn.style.backgroundColor = '#ff4757';
+    deleteBtn.style.color = 'white';
+    deleteBtn.style.border = 'none';
+    deleteBtn.style.borderRadius = '50%';
+    deleteBtn.style.width = '18px';
+    deleteBtn.style.height = '18px';
+    deleteBtn.style.fontSize = '10px';
+    deleteBtn.style.cursor = 'pointer';
+    deleteBtn.style.display = 'none';
+    deleteBtn.style.alignItems = 'center';
+    deleteBtn.style.justifyContent = 'center';
+    deleteBtn.style.boxShadow = '0 2px 4px rgba(0,0,0,0.5)';
+    deleteBtn.style.zIndex = '10';
 
-    // Icono basado en extensión
-    const icon = document.createElement('div');
-    icon.style.fontSize = '40px';
-    icon.style.marginBottom = '10px';
-    if (name.endsWith('.mat')) icon.textContent = '🎨';
-    else if (name.endsWith('.png') || name.endsWith('.jpg')) icon.textContent = '🖼️';
-    else if (name.endsWith('.glb')) icon.textContent = '🧊';
-    else icon.textContent = '📄';
+    item.onmouseenter = () => {
+      item.style.backgroundColor = 'rgba(255,255,255,0.05)';
+      deleteBtn.style.display = 'flex';
+    };
+    item.onmouseleave = () => {
+      item.style.backgroundColor = 'transparent';
+      deleteBtn.style.display = 'none';
+    };
+
+    // Physical deletion logic with dependency check (Phase 49.1)
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // Prevent asset selection
+
+      const isTexture = name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.tga');
+      const type = isTexture ? 'texture' : (name.endsWith('.mat') ? 'material' : 'other');
+
+      // 1. Dependency Check
+      if (type !== 'other') {
+        const deps = await ProjectSystem.checkAssetDependencies(name, type as any);
+        if (deps.length > 0) {
+          const displayDeps = deps.slice(0, 3).join('\n- ');
+          const more = deps.length > 3 ? `\n...and ${deps.length - 3} more.` : '';
+          alert(`⛔ Cannot delete '${name}' because it is in use by:\n\n- ${displayDeps}${more}\n\nPlease remove these references before deleting.`);
+          return;
+        }
+      }
+
+      // 2. Safe Deletion
+      if (confirm(`Are you sure you want to permanently delete '${name}' from disk?`)) {
+        try {
+          await dirHandle.removeEntry(name);
+          EditorLogger.info(`Asset deleted: ${name}`);
+          this.refreshContent();
+        } catch (error) {
+          EditorLogger.error(`Error deleting ${name}`, error);
+        }
+      }
+    });
+
+    item.appendChild(deleteBtn);
+
+    // Visual container for thumbnails
+    const visualContainer = document.createElement('div');
+    visualContainer.style.width = '48px';
+    visualContainer.style.height = '48px';
+    visualContainer.style.marginBottom = '8px';
+    visualContainer.style.display = 'flex';
+    visualContainer.style.justifyContent = 'center';
+    visualContainer.style.alignItems = 'center';
+
+    try {
+      const isTexture = name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.tga');
+      if (isTexture) {
+        // 1. REAL TEXTURE THUMBNAIL
+        const file = await entry.getFile();
+        const url = URL.createObjectURL(file);
+        const img = document.createElement('img');
+        img.src = url;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.style.borderRadius = '4px';
+        img.style.border = '1px solid var(--border-color)';
+        visualContainer.appendChild(img);
+      } else if (name.endsWith('.mat')) {
+        // 2. MATERIAL THUMBNAIL (🎨)
+        visualContainer.style.fontSize = '40px';
+        visualContainer.textContent = '🎨';
+      } else {
+        // 3. MODELS OR OTHERS
+        visualContainer.style.fontSize = '40px';
+        visualContainer.textContent = name.endsWith('.glb') ? '🧊' : '📄';
+      }
+    } catch (e) {
+      visualContainer.style.fontSize = '30px';
+      visualContainer.textContent = '❌';
+    }
 
     const text = document.createElement('div');
     text.textContent = name;
@@ -333,7 +420,7 @@ export class ContentBrowser extends HTMLElement {
     text.style.textAlign = 'center';
     text.style.wordBreak = 'break-all';
 
-    item.appendChild(icon);
+    item.appendChild(visualContainer);
     item.appendChild(text);
 
     // Interaction
@@ -341,20 +428,23 @@ export class ContentBrowser extends HTMLElement {
       EventBus.emit('OnAssetSelected', {
         type: name.endsWith('.mat') ? 'material' : 'texture',
         name: name,
-        path: `Materials/${name}` // Maintain consistency with current relative path logic
+        path: name.endsWith('.mat') ? `Materials/${name}` : `Textures/${name}`
       });
     });
 
     this.contentArea.appendChild(item);
 
-    // Drag & Drop support (Phase 47)
-    if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.tga')) {
+    // Drag & Drop support (Phase 47 & 50)
+    const isTexture = name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp') || name.endsWith('.tga');
+    const isMaterial = name.endsWith('.mat');
+
+    if (isTexture || isMaterial) {
       item.draggable = true;
       item.addEventListener('dragstart', (e) => {
         const assetData = {
-          type: 'texture',
+          type: isMaterial ? 'material' : 'texture',
           name: name,
-          path: `Assets/Textures/${name}`
+          path: isMaterial ? `Materials/${name}` : `Textures/${name}`
         };
         e.dataTransfer?.setData('application/json', JSON.stringify(assetData));
         item.style.opacity = '0.5';

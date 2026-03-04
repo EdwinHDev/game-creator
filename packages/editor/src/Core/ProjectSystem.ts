@@ -324,6 +324,72 @@ export class ProjectSystem {
   }
 
   /**
+   * Resolves a relative path from the Assets directory to a FileSystemFileHandle.
+   */
+  public static async getFileHandle(relativePath: string): Promise<FileSystemFileHandle | null> {
+    if (!this.directoryHandle) return null;
+
+    try {
+      const assetsDir = await this.directoryHandle.getDirectoryHandle('Assets');
+      const parts = relativePath.split(/[/\\]/);
+      let currentDir = assetsDir;
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        if (part === '.' || part === '' || part === 'Assets') continue;
+        currentDir = await currentDir.getDirectoryHandle(part);
+      }
+
+      const fileName = parts[parts.length - 1];
+      return await currentDir.getFileHandle(fileName);
+    } catch (e) {
+      // Expected if file doesn't exist
+      return null;
+    }
+  }
+
+  /**
+   * Checks if an asset is being referenced by other files (Materials or Scene).
+   */
+  public static async checkAssetDependencies(fileName: string, type: 'texture' | 'material'): Promise<string[]> {
+    const dependencies: string[] = [];
+    if (!this.directoryHandle) return dependencies;
+
+    try {
+      if (type === 'texture') {
+        // Search in all Materials to see if they use this texture
+        const assetsHandle = await this.directoryHandle.getDirectoryHandle('Assets');
+        const matHandle = await assetsHandle.getDirectoryHandle('Materials').catch(() => null);
+        if (matHandle) {
+          for await (const [matName, entry] of (matHandle as any).entries()) {
+            if (entry.kind === 'file' && matName.endsWith('.mat')) {
+              const file = await entry.getFile();
+              const text = await file.text();
+              // Fast check if texture name is in material JSON
+              if (text.includes(fileName)) {
+                dependencies.push(`Material: ${matName}`);
+              }
+            }
+          }
+        }
+      } else if (type === 'material') {
+        // Search in Scene.json for references
+        const sceneFile = await this.directoryHandle.getFileHandle('Scene.json', { create: false }).catch(() => null);
+        if (sceneFile) {
+          const file = await sceneFile.getFile();
+          const text = await file.text();
+          if (text.includes(fileName)) {
+            dependencies.push(`Actor in Scene.json`);
+          }
+        }
+      }
+    } catch (e) {
+      EditorLogger.error("Error checking dependencies", e);
+    }
+    return dependencies;
+  }
+
+  /**
    * Imports external files into the project, categorizing them into Textures or Models.
    */
   public static async importFiles(): Promise<boolean> {

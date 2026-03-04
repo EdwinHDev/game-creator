@@ -1,4 +1,4 @@
-import { EventBus, quat, UDirectionalLightComponent } from '@game-creator/engine';
+import { EventBus, quat, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
 
@@ -180,7 +180,7 @@ export class DetailsPanel extends HTMLElement {
     }
 
     // 5. Material Section
-    const mesh = this.currentActor.getComponent ? this.currentActor.getComponent('UMeshComponent') : null;
+    const mesh = this.currentActor.getComponent ? this.currentActor.getComponent(UMeshComponent) : null;
     if (mesh) {
       this.renderActorMaterialUI(mesh);
     }
@@ -462,6 +462,48 @@ export class DetailsPanel extends HTMLElement {
       }
     });
 
+    // Drag & Drop (Phase 50)
+    slot.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      slot.style.borderColor = 'var(--accent-color)';
+      slot.style.backgroundColor = 'rgba(255,255,255,0.05)';
+    });
+
+    slot.addEventListener('dragleave', () => {
+      slot.style.borderColor = 'var(--border-color)';
+      slot.style.backgroundColor = 'var(--bg-surface)';
+    });
+
+    slot.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      slot.style.borderColor = 'var(--border-color)';
+      slot.style.backgroundColor = 'var(--bg-surface)';
+
+      const dataStr = e.dataTransfer?.getData('application/json');
+      if (dataStr) {
+        try {
+          const dragData = JSON.parse(dataStr);
+          if (dragData.type === 'material') {
+            mesh.materialPath = `Materials/${dragData.name}`;
+            slot.textContent = mesh.materialPath;
+
+            // Load material via Engine
+            const { UAssetManager, Engine } = await import('@game-creator/engine');
+            const device = Engine.getInstance().getRenderer().getDevice();
+            if (device) {
+              const material = await UAssetManager.getInstance().loadMaterial(mesh.materialPath, device);
+              if (material) {
+                mesh.material = material;
+                EditorLogger.info(`Material ${dragData.name} applied to Actor via Drag & Drop.`);
+              }
+            }
+          }
+        } catch (err) {
+          EditorLogger.error("Failed to parse material drop data", err);
+        }
+      }
+    });
+
     this.appendChild(section);
   }
 
@@ -530,9 +572,18 @@ export class DetailsPanel extends HTMLElement {
 
     if (!data.textures) data.textures = { albedo: "", roughness: "", normal: "" };
 
-    const albedoSlot = this.createTextureSlot('Albedo (Base Color)', data.textures.albedo, (path: string) => data.textures.albedo = path);
-    const normalSlot = this.createTextureSlot('Normal Map', data.textures.normal, (path: string) => data.textures.normal = path);
-    const roughSlot = this.createTextureSlot('Roughness Map', data.textures.roughness, (path: string) => data.textures.roughness = path);
+    const albedoSlot = this.createTextureSlot('Albedo (Base Color)', data.textures.albedo, (path: string) => {
+      data.textures.albedo = path;
+      this.render();
+    });
+    const normalSlot = this.createTextureSlot('Normal Map', data.textures.normal, (path: string) => {
+      data.textures.normal = path;
+      this.render();
+    });
+    const roughSlot = this.createTextureSlot('Roughness Map', data.textures.roughness, (path: string) => {
+      data.textures.roughness = path;
+      this.render();
+    });
 
     controls.appendChild(albedoSlot);
     controls.appendChild(normalSlot);
@@ -616,16 +667,91 @@ export class DetailsPanel extends HTMLElement {
     label.style.marginBottom = '4px';
 
     const dropZone = document.createElement('div');
+    dropZone.style.display = 'flex';
+    dropZone.style.alignItems = 'center';
+    dropZone.style.gap = '8px';
     dropZone.style.height = '40px';
     dropZone.style.border = '1px dashed var(--border-color)';
     dropZone.style.backgroundColor = 'var(--bg-base)';
-    dropZone.style.display = 'flex';
-    dropZone.style.alignItems = 'center';
-    dropZone.style.padding = '0 10px';
-    dropZone.style.fontSize = '0.7rem';
+    dropZone.style.padding = '0 8px';
     dropZone.style.borderRadius = '4px';
-    dropZone.style.color = currentPath ? 'var(--text-main)' : 'var(--text-muted)';
-    dropZone.textContent = currentPath ? currentPath.split(/[/\\]/).pop()! : 'Drop Texture Here...';
+    dropZone.style.cursor = 'pointer';
+
+    // Thumbnail container
+    const slotThumb = document.createElement('div');
+    slotThumb.style.width = '24px';
+    slotThumb.style.height = '24px';
+    slotThumb.style.borderRadius = '2px';
+    slotThumb.style.display = 'flex';
+    slotThumb.style.alignItems = 'center';
+    slotThumb.style.justifyContent = 'center';
+    slotThumb.style.overflow = 'hidden';
+    slotThumb.style.flexShrink = '0';
+
+    const infoText = document.createElement('div');
+    infoText.style.fontSize = '0.7rem';
+    infoText.style.whiteSpace = 'nowrap';
+    infoText.style.overflow = 'hidden';
+    infoText.style.textOverflow = 'ellipsis';
+
+    const updateVisuals = async (path: string) => {
+      slotThumb.innerHTML = '';
+      if (path) {
+        const fullPath = path.startsWith('Assets/') ? path : `Assets/${path}`;
+        const handle = await ProjectSystem.getFileHandle(fullPath);
+        if (handle) {
+          const file = await handle.getFile();
+          const url = URL.createObjectURL(file);
+          const img = document.createElement('img');
+          img.src = url;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'contain';
+          slotThumb.appendChild(img);
+        } else {
+          slotThumb.textContent = '❓';
+        }
+        infoText.textContent = path.split(/[/\\]/).pop() || '';
+        infoText.style.color = 'var(--text-main)';
+        infoText.style.fontStyle = 'normal';
+
+        // Clear button (Phase 49)
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = '✖';
+        clearBtn.style.marginLeft = 'auto';
+        clearBtn.style.background = 'transparent';
+        clearBtn.style.border = 'none';
+        clearBtn.style.color = 'var(--text-muted)';
+        clearBtn.style.cursor = 'pointer';
+        clearBtn.style.fontSize = '12px';
+        clearBtn.style.padding = '4px 8px';
+        clearBtn.style.transition = 'color 0.2s';
+
+        clearBtn.onmouseenter = () => clearBtn.style.color = '#ff4757';
+        clearBtn.onmouseleave = () => clearBtn.style.color = 'var(--text-muted)';
+
+        clearBtn.onclick = (e) => {
+          e.stopPropagation();
+          onDrop('');
+        };
+
+        dropZone.appendChild(clearBtn);
+      } else {
+        slotThumb.style.backgroundColor = 'var(--bg-surface)';
+        slotThumb.style.border = '1px solid var(--border-color)';
+        const placeholderIcon = document.createElement('span');
+        placeholderIcon.textContent = '🖼️';
+        placeholderIcon.style.opacity = '0.4';
+        placeholderIcon.style.fontSize = '0.8rem';
+        slotThumb.appendChild(placeholderIcon);
+
+        infoText.textContent = 'Empty...';
+        infoText.style.color = 'var(--text-muted)';
+        infoText.style.fontStyle = 'italic';
+      }
+    };
+
+    updateVisuals(currentPath);
 
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -645,8 +771,7 @@ export class DetailsPanel extends HTMLElement {
         try {
           const dragData = JSON.parse(dataStr);
           if (dragData.type === 'texture') {
-            dropZone.textContent = dragData.name;
-            dropZone.style.color = 'var(--text-main)';
+            updateVisuals(dragData.path);
             onDrop(dragData.path);
           }
         } catch (err) {
@@ -655,6 +780,8 @@ export class DetailsPanel extends HTMLElement {
       }
     });
 
+    dropZone.appendChild(slotThumb);
+    dropZone.appendChild(infoText);
     container.appendChild(label);
     container.appendChild(dropZone);
     return container;

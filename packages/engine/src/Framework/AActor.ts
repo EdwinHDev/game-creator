@@ -53,6 +53,10 @@ export class AActor extends UObject {
   public getComponent<T extends UActorComponent>(
     componentClass: new (...args: any[]) => T
   ): T | null {
+    if (typeof componentClass !== 'function') {
+      console.warn(`[Engine] getComponent called with an invalid type on actor ${this.name}.`);
+      return null;
+    }
     for (const component of this.components) {
       if (component instanceof componentClass) {
         return component as T;
