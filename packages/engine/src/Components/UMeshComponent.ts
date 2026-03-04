@@ -13,9 +13,11 @@ export class UMeshComponent extends USceneComponent {
   public topology: GPUPrimitiveTopology = 'triangle-list';
   public isGizmo: boolean = false; // Phase 17.9.7: Flag for X-Ray rendering
   public material: UMaterial | null = null;
+  public baseColorTexture: GPUTexture | null = null;
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
     super(owner, name);
+    this.material = new UMaterial();
   }
 
   /**
@@ -26,50 +28,51 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Generates a simple 3D box and creates GPU buffers for it.
+   * Generates a simple colored box matching the updated 32-byte stride format:
+   * [x, y, z, nx, ny, nz, u, v]
    */
   public createBox(device: GPUDevice): void {
-    this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
 
     // 24 vertices (4 per face)
-    // Structure: posX, posY, posZ, normX, normY, normZ
     const vertices = new Float32Array([
-      // Front face (Z+)
-      -1, -1, 1, 0, 0, 1,
-      1, -1, 1, 0, 0, 1,
-      1, 1, 1, 0, 0, 1,
-      -1, 1, 1, 0, 0, 1,
+      // Front face (Z+) -> Normal: 0, 0, 1
+      -1, -1, 1, 0, 0, 1, 0, 1,
+      1, -1, 1, 0, 0, 1, 1, 1,
+      1, 1, 1, 0, 0, 1, 1, 0,
+      -1, 1, 1, 0, 0, 1, 0, 0,
 
-      // Back face (Z-)
-      -1, -1, -1, 0, 0, -1,
-      -1, 1, -1, 0, 0, -1,
-      1, 1, -1, 0, 0, -1,
-      1, -1, -1, 0, 0, -1,
+      // Back face (Z-) -> Normal: 0, 0, -1
+      -1, -1, -1, 0, 0, -1, 1, 1,
+      -1, 1, -1, 0, 0, -1, 1, 0,
+      1, 1, -1, 0, 0, -1, 0, 0,
+      1, -1, -1, 0, 0, -1, 0, 1,
 
-      // Top face (Y+)
-      -1, 1, -1, 0, 1, 0,
-      -1, 1, 1, 0, 1, 0,
-      1, 1, 1, 0, 1, 0,
-      1, 1, -1, 0, 1, 0,
+      // Top face (Y+) -> Normal: 0, 1, 0
+      -1, 1, -1, 0, 1, 0, 0, 0,
+      -1, 1, 1, 0, 1, 0, 0, 1,
+      1, 1, 1, 0, 1, 0, 1, 1,
+      1, 1, -1, 0, 1, 0, 1, 0,
 
-      // Bottom face (Y-)
-      -1, -1, -1, 0, -1, 0,
-      1, -1, -1, 0, -1, 0,
-      1, -1, 1, 0, -1, 0,
-      -1, -1, 1, 0, -1, 0,
+      // Bottom face (Y-) -> Normal: 0, -1, 0
+      -1, -1, -1, 0, -1, 0, 0, 1,
+      1, -1, -1, 0, -1, 0, 1, 1,
+      1, -1, 1, 0, -1, 0, 1, 0,
+      -1, -1, 1, 0, -1, 0, 0, 0,
 
-      // Right face (X+)
-      1, -1, -1, 1, 0, 0,
-      1, 1, -1, 1, 0, 0,
-      1, 1, 1, 1, 0, 0,
-      1, -1, 1, 1, 0, 0,
+      // Right face (X+) -> Normal: 1, 0, 0
+      1, -1, -1, 1, 0, 0, 1, 1,
+      1, 1, -1, 1, 0, 0, 1, 0,
+      1, 1, 1, 1, 0, 0, 0, 0,
+      1, -1, 1, 1, 0, 0, 0, 1,
 
-      // Left face (X-)
-      -1, -1, -1, -1, 0, 0,
-      -1, -1, 1, -1, 0, 0,
-      -1, 1, 1, -1, 0, 0,
-      -1, 1, -1, -1, 0, 0,
+      // Left face (X-) -> Normal: -1, 0, 0
+      -1, -1, -1, -1, 0, 0, 0, 1,
+      -1, -1, 1, -1, 0, 0, 1, 1,
+      -1, 1, 1, -1, 0, 0, 1, 0,
+      -1, 1, -1, -1, 0, 0, 0, 0,
     ]);
 
     // 36 indices (6 faces * 2 triangles * 3 vertices)
@@ -83,7 +86,7 @@ export class UMeshComponent extends USceneComponent {
     ]);
 
     this.indexCount = indices.length;
-    this.vertexCount = 24;
+    this.vertexCount = vertices.length / 8; // 8 floats per vertex
 
     // Create Vertex Buffer
     this.vertexBuffer = device.createBuffer({
@@ -104,7 +107,34 @@ export class UMeshComponent extends USceneComponent {
     this.indexBuffer.unmap();
 
     // Initialize default material
-    this.material = new UMaterial();
+    if (!this.material) this.material = new UMaterial();
+  }
+
+  /**
+   * Phase 29.1: Texture Loading
+   * Asynchronously loads an image from an URL and creates a WebGPU texture.
+   */
+  public async loadTexture(url: string, device: GPUDevice): Promise<void> {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const imageBitmap = await createImageBitmap(blob);
+
+      this.baseColorTexture = device.createTexture({
+        size: [imageBitmap.width, imageBitmap.height, 1],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+
+      device.queue.copyExternalImageToTexture(
+        { source: imageBitmap },
+        { texture: this.baseColorTexture },
+        [imageBitmap.width, imageBitmap.height]
+      );
+
+    } catch (error) {
+      console.error(`Failed to load texture at path ${url}:`, error);
+    }
   }
 
   /**
@@ -450,11 +480,13 @@ export class UMeshComponent extends USceneComponent {
       const theta = (lat * Math.PI) / latSegments;
       const sinTheta = Math.sin(theta);
       const cosTheta = Math.cos(theta);
+      const v = lat / latSegments;
 
       for (let lon = 0; lon <= lonSegments; lon++) {
         const phi = (lon * 2 * Math.PI) / lonSegments;
         const sinPhi = Math.sin(phi);
         const cosPhi = Math.cos(phi);
+        const u = lon / lonSegments;
 
         const nx = cosPhi * sinTheta;
         const ny = cosTheta;
@@ -468,6 +500,8 @@ export class UMeshComponent extends USceneComponent {
         vertices.push(x, y, z);
         // Normal (UV sphere normals are the unit direction from center)
         vertices.push(nx, ny, nz);
+        // UV
+        vertices.push(u, v);
       }
     }
 
@@ -481,7 +515,7 @@ export class UMeshComponent extends USceneComponent {
       }
     }
 
-    this.vertexCount = vertices.length / 6;
+    this.vertexCount = vertices.length / 8;
     this.indexCount = indices.length;
 
     const vertexData = new Float32Array(vertices);

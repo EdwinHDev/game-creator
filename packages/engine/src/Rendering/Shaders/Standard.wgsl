@@ -6,6 +6,8 @@ struct Uniforms {
     metallic: f32,
 }
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var baseColorTexture: texture_2d<f32>;
+@group(0) @binding(2) var baseColorSampler: sampler;
 
 struct SceneUniforms {
     lightDirection: vec4<f32>,
@@ -23,6 +25,7 @@ struct VertexOut {
     @location(0) normal: vec3<f32>,
     @location(1) worldPos: vec3<f32>,
     @location(2) shadowPos: vec4<f32>,
+    @location(3) uv: vec2<f32>,
 }
 
 const PI: f32 = 3.14159265359;
@@ -30,7 +33,8 @@ const PI: f32 = 3.14159265359;
 @vertex
 fn vs_main(
     @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>
 ) -> VertexOut {
     let worldPosVec4 = uniforms.modelMatrix * vec4<f32>(position, 1.0);
     
@@ -40,6 +44,7 @@ fn vs_main(
     // We treat normal transformation simply for now. Ideally use inverse transpose of modelMatrix.
     out.normal = (uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz;
     out.shadowPos = scene.lightViewProj * worldPosVec4;
+    out.uv = uv;
     return out;
 }
 
@@ -77,6 +82,10 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    // Phase 29.1: Texture Retrieval
+    let texColor = textureSample(baseColorTexture, baseColorSampler, in.uv);
+    let diffuseColor = uniforms.baseColor.rgb * texColor.rgb;
+
     let cameraPos = scene.cameraPosition.xyz;
     let N = normalize(in.normal);
     let V = normalize(cameraPos - in.worldPos);
@@ -85,9 +94,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     // Cook-Torrance PBR
     var F0 = vec3<f32>(0.04);
-    // Phase 27: Force white sun reflections for metals instead of tinting by baseColor
-    // Phase 28: Using correct ambient F0 for metals
-    F0 = mix(F0, uniforms.baseColor.rgb, uniforms.metallic);
+    // Phase 28: Using correct ambient F0 for metals (blended with new diffuse tracking)
+    F0 = mix(F0, diffuseColor, uniforms.metallic);
 
     let NDF = DistributionGGX(N, H, uniforms.roughness);
     let G = GeometrySmith(N, V, L, uniforms.roughness);
@@ -108,8 +116,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let shadowVisibility = textureSampleCompare(shadowMap, shadowSampler, posUV, shadowCoords.z - 0.005);
 
     let NdotL = max(dot(N, L), 0.0);
-    // Phase 27: Hyper-Intense Specular (20.0)
-    let directLighting = (kD * uniforms.baseColor.rgb / PI + specular * 20.0) * scene.lightColor.rgb * NdotL * shadowVisibility;
+    
+    // Phase 30: Energy Conservation (Specular Gain Dampening)
+    // Reduce the intense 20.0 specular highlight dynamically as roughness increases.
+    let specularGain = mix(20.0, 0.0, uniforms.roughness);
+    let directLighting = (kD * diffuseColor / PI + specular * specularGain) * scene.lightColor.rgb * NdotL * shadowVisibility;
     
     // Phase 26.1: Dynamic Sky IBL
     let sunY = scene.lightDirection.y;
@@ -131,29 +142,21 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let upFactor = dot(N, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
     let hemiLight = mix(groundColor, skyColor, upFactor);
     
-    // Phase 27.2: Fake Sun Disk & IBL Specular Simulation
-    let R = reflect(-V, N);
-
-    // 1. Procedural Sun Disk
-    let dotSR = max(dot(R, L), 0.0); // R compared to the light direction (L)
-    let sunDiskIntensity = pow(dotSR, 2000.0) * 10.0;
-    
-    // Only apply sun disk if we have line of sight from the sun
-    let sunDisk = sunDiskIntensity * scene.lightColor.rgb * shadowVisibility;
-
     // Phase 28: Energy Conservation Polish
-    // 2. Ambient base reflection (Fresnel injected with sky color)
+    // Ambient base reflection (Fresnel injected with sky color)
+    let R = reflect(-V, N);
     let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
     let ambientReflection = F_ambient * skyColor * 0.5; // Scaled down for fake IBL
 
     // The core ambient illumination (Metals have 0 diffuse ambient)
-    let ambientDiffuse = hemiLight * uniforms.baseColor.rgb * (1.0 - uniforms.metallic);
+    let ambientDiffuse = hemiLight * diffuseColor * (1.0 - uniforms.metallic);
     let ambient = ambientDiffuse + ambientReflection;
 
-    let color = ambient + directLighting + sunDisk;
+    // Phase 30.1: Removed procedural sunDisk - purely relying on Cook-Torrance directLighting.
+    let color = ambient + directLighting;
 
     // HDR / Tonemapping (simplified)
     let finalColor = color / (color + vec3<f32>(1.0));
     
-    return vec4<f32>(finalColor, uniforms.baseColor.a);
+    return vec4<f32>(finalColor, uniforms.baseColor.a * texColor.a);
 }

@@ -62,6 +62,10 @@ export class Renderer {
 
   public viewProjMatrix: mat4 = mat4.create();
 
+  // Texturing fallbacks
+  private defaultWhiteTexture: GPUTexture | null = null;
+  private defaultSampler: GPUSampler | null = null;
+
   constructor() { }
 
   public async initialize(canvas: HTMLCanvasElement): Promise<void> {
@@ -71,12 +75,21 @@ export class Renderer {
     this.format = navigator.gpu.getPreferredCanvasFormat();
     this.context!.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
 
-    const vertexBuffers: GPUVertexBufferLayout[] = [{
-      arrayStride: 24,
+    const standardVertexBuffers: GPUVertexBufferLayout[] = [{
+      arrayStride: 32,
       attributes: [
         { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
         { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
+        { shaderLocation: 2, offset: 24, format: 'float32x2' }, // uv
       ],
+    }];
+
+    const colorVertexBuffers: GPUVertexBufferLayout[] = [{
+      arrayStride: 24,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
+        { shaderLocation: 1, offset: 12, format: 'float32x3' }, // color (or fallback normal)
+      ]
     }];
 
     const standardModule = this.device.createShaderModule({ code: standardShader });
@@ -95,7 +108,7 @@ export class Renderer {
 
     this.shadowPipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: shadowModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: shadowModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
@@ -109,7 +122,7 @@ export class Renderer {
 
     this.trianglePipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: standardModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: standardModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: standardModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
@@ -117,7 +130,7 @@ export class Renderer {
 
     this.linePipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: gridModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: gridModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
       fragment: {
         module: gridModule, entryPoint: 'fs_main',
         targets: [{
@@ -133,7 +146,7 @@ export class Renderer {
 
     this.outlinePipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: outlineModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: outlineModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: outlineModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'front' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
@@ -141,7 +154,7 @@ export class Renderer {
 
     this.gizmoOverlayPipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
       fragment: { module: gizmoModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'line-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
@@ -149,7 +162,7 @@ export class Renderer {
 
     this.gizmoTriangleOverlayPipeline = this.device.createRenderPipeline({
       layout: 'auto',
-      vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: vertexBuffers },
+      vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
       fragment: { module: gizmoModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
@@ -187,6 +200,27 @@ export class Renderer {
     this.billboardQuadBuffer = this.device.createBuffer({ size: quadData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST, mappedAtCreation: true });
     new Float32Array(this.billboardQuadBuffer.getMappedRange()).set(quadData);
     this.billboardQuadBuffer.unmap();
+
+    // Phase 29.1: Default Texture and Sampler
+    this.defaultSampler = this.device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear',
+      addressModeU: 'repeat',
+      addressModeV: 'repeat',
+    });
+
+    this.defaultWhiteTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.defaultWhiteTexture },
+      new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
 
     Logger.info("WebGPU Renderer Initialized (Modular).");
   }
@@ -390,7 +424,16 @@ export class Renderer {
     data[37] = component.material?.metallic ?? 0.0;
     // data[38], data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
-    const bindGroup = this.getOrCreateBindGroup(component.id, this.trianglePipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
+
+    // Phase 29.1: Bind textures alongside material uniforms
+    const texView = component.baseColorTexture ? component.baseColorTexture.createView() : this.defaultWhiteTexture!.createView();
+    const cacheKey = component.id + (component.baseColorTexture ? '_customTex' : '_defaultTex');
+    const bindGroup = this.getOrCreateBindGroup(cacheKey, this.trianglePipeline.getBindGroupLayout(0), [
+      { binding: 0, resource: { buffer } },
+      { binding: 1, resource: texView },
+      { binding: 2, resource: this.defaultSampler! }
+    ]);
+
     pass.setPipeline(this.trianglePipeline);
     pass.setBindGroup(0, bindGroup); pass.setBindGroup(1, this.sceneBindGroup);
     pass.setVertexBuffer(0, component.vertexBuffer!);
