@@ -338,16 +338,19 @@ export class DetailsPanel extends HTMLElement {
     if (inputX) {
       inputX.addEventListener('input', (e) => {
         root.relativeLocation[0] = parseFloat((e.target as HTMLInputElement).value) || 0;
+        ProjectSystem.markUnsaved();
       });
     }
     if (inputY) {
       inputY.addEventListener('input', (e) => {
         root.relativeLocation[1] = parseFloat((e.target as HTMLInputElement).value) || 0;
+        ProjectSystem.markUnsaved();
       });
     }
     if (inputZ) {
       inputZ.addEventListener('input', (e) => {
         root.relativeLocation[2] = parseFloat((e.target as HTMLInputElement).value) || 0;
+        ProjectSystem.markUnsaved();
       });
     }
 
@@ -361,6 +364,7 @@ export class DetailsPanel extends HTMLElement {
       const yaw = parseFloat(rotY.value) || 0;
       const roll = parseFloat(rotZ.value) || 0;
       quat.fromEuler(root.relativeRotation, pitch, yaw, roll);
+      ProjectSystem.markUnsaved();
     };
 
     if (rotX) rotX.addEventListener('input', updateRotation);
@@ -375,16 +379,19 @@ export class DetailsPanel extends HTMLElement {
     if (scaX) {
       scaX.addEventListener('input', (e) => {
         root.relativeScale[0] = parseFloat((e.target as HTMLInputElement).value) || 1;
+        ProjectSystem.markUnsaved();
       });
     }
     if (scaY) {
       scaY.addEventListener('input', (e) => {
         root.relativeScale[1] = parseFloat((e.target as HTMLInputElement).value) || 1;
+        ProjectSystem.markUnsaved();
       });
     }
     if (scaZ) {
       scaZ.addEventListener('input', (e) => {
         root.relativeScale[2] = parseFloat((e.target as HTMLInputElement).value) || 1;
+        ProjectSystem.markUnsaved();
       });
     }
 
@@ -585,14 +592,17 @@ export class DetailsPanel extends HTMLElement {
 
     const albedoSlot = this.createTextureSlot('Albedo (Base Color)', data.textures.albedo, (path: string) => {
       data.textures.albedo = path;
+      applyMaterialChange();
       this.render();
     });
     const normalSlot = this.createTextureSlot('Normal Map', data.textures.normal, (path: string) => {
       data.textures.normal = path;
+      applyMaterialChange();
       this.render();
     });
     const roughSlot = this.createTextureSlot('Roughness Map', data.textures.roughness, (path: string) => {
       data.textures.roughness = path;
+      applyMaterialChange();
       this.render();
     });
 
@@ -600,31 +610,18 @@ export class DetailsPanel extends HTMLElement {
     controls.appendChild(normalSlot);
     controls.appendChild(roughSlot);
 
-    // Save Button
-    const saveBtn = document.createElement('button');
-    saveBtn.textContent = 'Save Changes';
-    saveBtn.style.marginTop = '25px';
-    saveBtn.style.width = '100%';
-    saveBtn.style.padding = '10px';
-    saveBtn.style.backgroundColor = 'var(--accent-color)';
-    saveBtn.style.color = 'white';
-    saveBtn.style.border = 'none';
-    saveBtn.style.borderRadius = '4px';
-    saveBtn.style.cursor = 'pointer';
-    saveBtn.style.fontWeight = 'bold';
-    saveBtn.style.textTransform = 'uppercase';
-    saveBtn.style.fontSize = '0.75rem';
+    const applyMaterialChange = async () => {
+      ProjectSystem.markUnsaved();
+      await ProjectSystem.saveMaterialData(fileName, data);
 
-    saveBtn.onclick = async () => {
-      const success = await ProjectSystem.saveMaterialData(fileName, data);
-      if (success) {
-        EditorLogger.info(`Saved changes to ${fileName}`);
-        // Optionally notify engine to reload this material
-        EventBus.emit('RequestContentBrowserRefresh', {});
+      const { UAssetManager, Engine } = await import('@game-creator/engine');
+      const device = Engine.getInstance().getRenderer().getDevice();
+      if (device) {
+        // Live update for all actors using this material
+        await UAssetManager.getInstance().applyMaterialDataToCache(`Materials/${fileName}`, data, device);
       }
     };
 
-    container.appendChild(saveBtn);
     this.appendChild(container);
 
     // Bindings
@@ -633,6 +630,7 @@ export class DetailsPanel extends HTMLElement {
       const hex = (e.target as HTMLInputElement).value;
       const rgb = this.hexToVec4(hex);
       data.baseColor = rgb;
+      applyMaterialChange();
     };
 
     const metRange = container.querySelector('#mat-metallic-range') as HTMLInputElement;
@@ -641,6 +639,7 @@ export class DetailsPanel extends HTMLElement {
       const val = parseFloat((e.target as HTMLInputElement).value);
       data.metallic = val;
       metVal.textContent = val.toFixed(2);
+      applyMaterialChange();
     };
 
     const roughRange = container.querySelector('#mat-roughness-range') as HTMLInputElement;
@@ -649,6 +648,7 @@ export class DetailsPanel extends HTMLElement {
       const val = parseFloat((e.target as HTMLInputElement).value);
       data.roughness = val;
       roughVal.textContent = val.toFixed(2);
+      applyMaterialChange();
     };
   }
 

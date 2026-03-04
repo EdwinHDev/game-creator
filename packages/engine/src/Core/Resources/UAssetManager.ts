@@ -151,6 +151,30 @@ export class UAssetManager {
   }
 
   /**
+   * Updates a material currently in memory. This allows all actors using this material
+   * to be updated instantly in the viewport.
+   */
+  public async applyMaterialDataToCache(path: string, data: any, device: GPUDevice): Promise<void> {
+    const mat = this.materialCache.get(path);
+    if (mat) {
+      // Direct property update for real-time responsiveness
+      if (data.baseColor) mat.baseColor = new Float32Array(data.baseColor);
+      if (data.metallic !== undefined) mat.metallic = data.metallic;
+      if (data.roughness !== undefined) mat.roughness = data.roughness;
+
+      // Update texture paths (updateResources will handle the actual GPU loading)
+      if (data.textures) {
+        mat.albedoMapPath = data.textures.albedo || null;
+        mat.normalMapPath = data.textures.normal || null;
+        mat.roughnessMapPath = data.textures.roughness || null;
+      }
+
+      await mat.updateResources(device, this);
+      Logger.info(`UAssetManager: Real-time update applied to ${path}`);
+    }
+  }
+
+  /**
    * Clears the cache and resets the project directory.
    */
   public reset(newDirectory: FileSystemDirectoryHandle | null): void {

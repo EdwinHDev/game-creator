@@ -7,6 +7,19 @@ import { EditorLogger } from './EditorLogger';
 export class ProjectSystem {
   public static directoryHandle: FileSystemDirectoryHandle | null = null;
   public static projectName: string = 'Untitled Project';
+  public static hasUnsavedChanges: boolean = false;
+
+  public static markUnsaved() {
+    if (!this.hasUnsavedChanges) {
+      this.hasUnsavedChanges = true;
+      document.title = `* Game Creator - ${this.projectName || 'Untitled'}`;
+    }
+  }
+
+  public static clearUnsaved() {
+    this.hasUnsavedChanges = false;
+    document.title = `Game Creator - ${this.projectName || 'Untitled'}`;
+  }
 
   /**
    * Returns the current project directory handle.
@@ -72,6 +85,7 @@ export class ProjectSystem {
       await sceneWritable.close();
 
       EditorLogger.info(`Project created: ${this.projectName}`);
+      this.clearUnsaved();
       return true;
     } catch (error) {
       EditorLogger.error('Failed to create project:', error);
@@ -119,6 +133,7 @@ export class ProjectSystem {
       await writable.close();
 
       EditorLogger.info(`Project saved: ${this.projectName}`);
+      this.clearUnsaved();
     } catch (error) {
       EditorLogger.error('Failed to save project:', error);
     }
@@ -194,6 +209,7 @@ export class ProjectSystem {
       }
 
       EditorLogger.info(`Project loaded: ${this.projectName}`);
+      this.clearUnsaved();
     } catch (error) {
       EditorLogger.error('Failed to load project:', error);
     }
@@ -449,3 +465,11 @@ export class ProjectSystem {
     }
   }
 }
+
+// Browser exit warning for unsaved changes (Phase 54)
+window.addEventListener('beforeunload', (e) => {
+  if (ProjectSystem.hasUnsavedChanges) {
+    e.preventDefault();
+    e.returnValue = 'Tienes cambios sin guardar. ¿Seguro que quieres salir?';
+  }
+});

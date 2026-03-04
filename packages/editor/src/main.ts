@@ -52,6 +52,9 @@ async function initEngine() {
       ProjectSystem.loadProject(engine);
     });
 
+    // Handle actor creation/destruction for unsaved changes (Phase 54)
+    EventBus.on('OnActorSpawned', () => ProjectSystem.markUnsaved());
+
     // Handle actor destruction requests from UI
     EventBus.on('RequestActorDestruction', (actor: any) => {
       if (actor.getComponent && actor.getComponent(UDirectionalLightComponent)) {
@@ -59,6 +62,7 @@ async function initEngine() {
         return;
       }
       world.destroyActor(actor);
+      ProjectSystem.markUnsaved(); // Mark dirty on destruction
     });
     // ------------------------------------
 
