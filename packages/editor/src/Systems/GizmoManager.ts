@@ -440,8 +440,8 @@ export class GizmoManager {
       } else {
         if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05, color);
         else if (this.currentTransformMode === 'scale') {
-          // Phase 34.5: Color support for Scaling Gizmo Box tips
-          mesh.createGizmoCube(device, 1.5, color);
+          // Phase 35.5.2: Replace hollow lines with solid filled cubes
+          mesh.createSolidGizmoCube(device, 0.5, color);
           vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085);
         }
         if (mesh.material) {

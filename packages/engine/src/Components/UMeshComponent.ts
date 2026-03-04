@@ -484,6 +484,72 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
+   * Generates a solid colored cube specifically for 6-float Gizmo pipelines (filled).
+   */
+  public createSolidGizmoCube(device: GPUDevice, size: number = 0.1, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+    this.topology = 'triangle-list';
+
+    const s = size * 1.7;
+    const [r, g, b] = color;
+
+    // 8 Corners of the cube
+    const p = [
+      [-s, -s, s], [s, -s, s], [s, s, s], [-s, s, s], // Front (0,1,2,3)
+      [-s, -s, -s], [s, -s, -s], [s, s, -s], [-s, s, -s]  // Back  (4,5,6,7)
+    ];
+
+    // Vertices: 24 (4 per face to handle flat coloring easily in basic pipeline)
+    // Format: [x, y, z, r, g, b]
+    const vertices = new Float32Array([
+      // Front face
+      ...p[0], r, g, b, ...p[1], r, g, b, ...p[2], r, g, b, ...p[3], r, g, b,
+      // Back face
+      ...p[5], r, g, b, ...p[4], r, g, b, ...p[7], r, g, b, ...p[6], r, g, b,
+      // Top face
+      ...p[3], r, g, b, ...p[2], r, g, b, ...p[6], r, g, b, ...p[7], r, g, b,
+      // Bottom face
+      ...p[4], r, g, b, ...p[5], r, g, b, ...p[1], r, g, b, ...p[0], r, g, b,
+      // Right face
+      ...p[1], r, g, b, ...p[5], r, g, b, ...p[6], r, g, b, ...p[2], r, g, b,
+      // Left face
+      ...p[4], r, g, b, ...p[0], r, g, b, ...p[3], r, g, b, ...p[7], r, g, b
+    ]);
+
+    // Indices: 36 (6 faces * 2 triangles * 3 vertices)
+    const indices = new Uint16Array([
+      0, 1, 2, 0, 2, 3, // Front
+      4, 5, 6, 4, 6, 7, // Back
+      8, 9, 10, 8, 10, 11, // Top
+      12, 13, 14, 12, 14, 15, // Bottom
+      16, 17, 18, 16, 18, 19, // Right
+      20, 21, 22, 20, 22, 23  // Left
+    ]);
+
+    this.vertexCount = vertices.length / 6;
+    this.indexCount = indices.length;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
+    this.indexBuffer.unmap();
+
+    this.material = new UMaterial();
+  }
+
+  /**
    * Generates a smooth UV sphere.
    */
   public createSphere(device: GPUDevice, radius: number = 1.0, segments: number = 32): void {
