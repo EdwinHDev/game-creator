@@ -5,6 +5,7 @@ export * from './Core/Errors';
 export * from './Core/EventBus';
 export * from './Core/UObject';
 export * from './Core/Engine';
+export * from './Core/Resources/UAssetManager';
 export * from './Rendering/Renderer';
 export * from './Rendering/UMaterial';
 

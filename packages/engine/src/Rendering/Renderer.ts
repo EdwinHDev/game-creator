@@ -4,6 +4,7 @@ import { World } from '../Framework/World';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { UMeshComponent } from '../Components/UMeshComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
+import { UAssetManager } from '../Core/Resources/UAssetManager';
 
 // Shader Imports (Vite ?raw)
 import standardShader from './Shaders/Standard.wgsl?raw';
@@ -57,8 +58,9 @@ export class Renderer {
 
   // Phase 29.1 / 33.1: Textures
   private defaultSampler: GPUSampler | null = null;
-  private defaultWhiteTexture: GPUTexture | null = null;
-  private dummyNormalTexture: GPUTexture | null = null;
+  private fallbackWhiteTexture: GPUTexture | null = null;
+  private fallbackFlatNormalTexture: GPUTexture | null = null;
+  private fallbackGrayTexture: GPUTexture | null = null;
 
   private shadowPipeline: GPURenderPipeline | null = null;
   private shadowTexture: GPUTexture | null = null;
@@ -235,27 +237,40 @@ export class Renderer {
       addressModeV: 'repeat',
     });
 
-    this.defaultWhiteTexture = this.device.createTexture({
+    // Material Architecture Fase 1: Fallback Textures
+    this.fallbackWhiteTexture = this.device.createTexture({
       size: [1, 1, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
     this.device.queue.writeTexture(
-      { texture: this.defaultWhiteTexture },
+      { texture: this.fallbackWhiteTexture },
       new Uint8Array([255, 255, 255, 255]),
       { bytesPerRow: 4, rowsPerImage: 1 },
       [1, 1, 1]
     );
+    UAssetManager.getInstance().setFallbackWhiteTexture(this.fallbackWhiteTexture);
 
-    // Phase 33.1: Dummy Normal Map pointing straight up (Z-axis in Tangent space)
-    this.dummyNormalTexture = this.device.createTexture({
+    this.fallbackFlatNormalTexture = this.device.createTexture({
       size: [1, 1, 1],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
     });
     this.device.queue.writeTexture(
-      { texture: this.dummyNormalTexture },
+      { texture: this.fallbackFlatNormalTexture },
       new Uint8Array([128, 128, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+
+    this.fallbackGrayTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackGrayTexture },
+      new Uint8Array([128, 128, 128, 255]),
       { bytesPerRow: 4, rowsPerImage: 1 },
       [1, 1, 1]
     );
@@ -463,10 +478,18 @@ export class Renderer {
     // data[38], data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
 
-    // Phase 29.1 / 33.1: Bind textures alongside material uniforms
-    const albedoView = component.material?.baseColorTexture ? component.material.baseColorTexture.createView() : this.defaultWhiteTexture!.createView();
-    const roughnessView = component.material?.roughnessTexture ? component.material.roughnessTexture.createView() : this.defaultWhiteTexture!.createView();
-    const normalView = component.material?.normalTexture ? component.material.normalTexture.createView() : this.dummyNormalTexture!.createView();
+    // Material Architecture Fase 1: Correct texture fallback selection
+    const albedoView = component.material?.baseColorTexture ?
+      component.material.baseColorTexture.createView() :
+      this.fallbackWhiteTexture!.createView();
+
+    const roughnessView = component.material?.roughnessTexture ?
+      component.material.roughnessTexture.createView() :
+      this.fallbackGrayTexture!.createView();
+
+    const normalView = component.material?.normalTexture ?
+      component.material.normalTexture.createView() :
+      this.fallbackFlatNormalTexture!.createView();
 
     const cacheKey = component.id + '_material_group';
 

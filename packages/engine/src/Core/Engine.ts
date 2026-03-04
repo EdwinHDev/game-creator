@@ -10,6 +10,7 @@ import { World } from '../Framework/World';
 export class Engine {
   private canvas: HTMLCanvasElement | null = null;
   private isRunning: boolean = false;
+  public get isStarted(): boolean { return this.isRunning; }
   private lastTime: number = 0;
   private animationFrameId: number | null = null;
   private static instance: Engine | null = null;

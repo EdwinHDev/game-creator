@@ -4,6 +4,7 @@ import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
 import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus, UMaterial } from '@game-creator/engine';
+import { ProjectSystem } from './Core/ProjectSystem';
 import './UI/TopBar';
 
 console.log('Game Creator Editor Initialized');
@@ -73,6 +74,11 @@ async function initEngine() {
       topbar.render(); // Re-render now that it has the engine
     }
 
+    // Handle project open requests from UI
+    EventBus.on('RequestProjectOpen', () => {
+      ProjectSystem.loadProject(engine);
+    });
+
     // Handle actor destruction requests from UI
     EventBus.on('RequestActorDestruction', (actor: any) => {
       if (actor.getComponent && actor.getComponent(UDirectionalLightComponent)) {
@@ -83,7 +89,13 @@ async function initEngine() {
     });
     // ------------------------------------
 
-    engine.start();
+    // Only start engine loop after a project is loaded
+    EventBus.subscribe('PROJECT_LOADED', () => {
+      if (!engine.isStarted) {
+        engine.start();
+        console.log('Engine loop started after project load.');
+      }
+    });
   }
 }
 

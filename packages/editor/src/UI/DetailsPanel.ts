@@ -5,6 +5,7 @@ import { EventBus, quat, UDirectionalLightComponent } from '@game-creator/engine
  */
 export class DetailsPanel extends HTMLElement {
   private currentActor: any = null;
+  private currentMaterialPath: string | null = null;
 
   constructor() {
     super();
@@ -14,6 +15,7 @@ export class DetailsPanel extends HTMLElement {
   connectedCallback() {
     EventBus.on('OnActorSelected', this.handleActorSelected);
     EventBus.on('OnActorDestroyed', this.handleActorDestroyed);
+    EventBus.on('OnMaterialSelected', this.handleMaterialSelected);
     EventBus.on('EngineTick', this.handleTick);
     this.render();
   }
@@ -21,12 +23,21 @@ export class DetailsPanel extends HTMLElement {
   disconnectedCallback() {
     EventBus.off('OnActorSelected', this.handleActorSelected);
     EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
+    EventBus.off('OnMaterialSelected', this.handleMaterialSelected);
     EventBus.off('EngineTick', this.handleTick);
   }
 
   private handleActorSelected = (actor: any) => {
     console.log('DetailsPanel received actor:', actor?.name);
     this.currentActor = actor;
+    this.currentMaterialPath = null;
+    this.render();
+  };
+
+  private handleMaterialSelected = (payload: any) => {
+    console.log('DetailsPanel received material:', payload.relativePath);
+    this.currentMaterialPath = payload.relativePath;
+    this.currentActor = null;
     this.render();
   };
 
@@ -106,17 +117,24 @@ export class DetailsPanel extends HTMLElement {
     this.innerHTML = '';
 
     // 2. Fallback if no selection
-    if (!this.currentActor) {
+    if (!this.currentActor && !this.currentMaterialPath) {
       const empty = document.createElement('div');
       empty.className = 'p-4 text-muted';
       empty.style.opacity = '0.5';
       empty.style.fontStyle = 'italic';
       empty.style.padding = '20px';
-      empty.textContent = 'Select an object to view details.';
+      empty.textContent = 'Select an object or material asset to view details.';
       this.appendChild(empty);
       return;
     }
 
+    // SCENARIO B: Material Asset Selected
+    if (this.currentMaterialPath) {
+      this.renderMaterialAssetUI();
+      return;
+    }
+
+    // SCENARIO A: Actor Selected
     // 3. Header
     const header = document.createElement('div');
     header.style.padding = '15px';
@@ -131,15 +149,16 @@ export class DetailsPanel extends HTMLElement {
     header.appendChild(title);
     this.appendChild(header);
 
-    // 4. Transform Section (Safe Check)
+    // 4. Transform Section
     const root = this.currentActor.rootComponent;
     if (root && root.relativeLocation) {
       this.renderTransformUI(root);
     }
 
     // 5. Material Section
-    if (root && root.material) {
-      this.renderMaterialUI(root.material);
+    const mesh = this.currentActor.getComponent ? this.currentActor.getComponent('UMeshComponent') : null;
+    if (mesh) {
+      this.renderActorMaterialUI(mesh);
     }
 
     // 6. Light Section
@@ -530,6 +549,86 @@ export class DetailsPanel extends HTMLElement {
     this.style.height = '100%';
     this.style.overflowY = 'auto';
     this.style.backgroundColor = 'var(--bg-panel)';
+  }
+  private async renderActorMaterialUI(mesh: any) {
+    const section = document.createElement('div');
+    section.style.padding = '15px';
+    section.style.borderTop = '1px solid var(--border-color)';
+
+    section.innerHTML = `
+      <div style="font-size: 10px; font-weight: bold; margin-bottom: 10px; opacity: 0.6;">MESH MATERIAL</div>
+      <div class="input-group">
+        <label>Material Asset</label>
+        <div id="material-slot" style="padding: 8px; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: 4px; font-size: 11px; cursor: pointer; text-align: center;">
+          ${mesh.materialPath || 'None (Using Default)'}
+        </div>
+      </div>
+    `;
+
+    const slot = section.querySelector('#material-slot') as HTMLElement;
+    slot.addEventListener('click', async () => {
+      // In a real editor, this would open an asset picker.
+      // For now, if a material is selected in Content Browser, we assign it.
+      if (this.currentMaterialPath) {
+        mesh.materialPath = this.currentMaterialPath;
+        slot.textContent = mesh.materialPath;
+
+        // Phase 2 logic: Update resources
+        const { UAssetManager, Engine } = await import('@game-creator/engine');
+        const device = Engine.getInstance().getRenderer().getDevice();
+        if (device) {
+          const material = await UAssetManager.getInstance().loadMaterial(mesh.materialPath, device);
+          if (material) {
+            mesh.material = material;
+          }
+        }
+      } else {
+        alert("Select a material in the Content Browser first to assign it here.");
+      }
+    });
+
+    this.appendChild(section);
+  }
+
+  private async renderMaterialAssetUI() {
+    const section = document.createElement('div');
+    section.style.padding = '15px';
+
+    const header = document.createElement('div');
+    header.style.marginBottom = '15px';
+    header.innerHTML = `
+      <div style="font-size: 10px; color: var(--accent-color); font-weight: bold; margin-bottom: 4px;">MATERIAL ASSET</div>
+      <div style="font-size: 14px; font-weight: bold;">${this.currentMaterialPath}</div>
+    `;
+    section.appendChild(header);
+
+    // Load material data from disk via FileSystem (complex, let's use ProjectSystem)
+    const { ProjectSystem } = await import('../Core/ProjectSystem');
+    const { UAssetManager, Engine } = await import('@game-creator/engine');
+
+    // We fetch the material instance from cache if it exists, so we edit it in memory
+    const device = Engine.getInstance().getRenderer().getDevice();
+    if (!device) return;
+
+    const material = await UAssetManager.getInstance().loadMaterial(this.currentMaterialPath!, device);
+    if (!material) return;
+
+    this.renderMaterialUI(material);
+
+    // Special: Add Auto-Save on change
+    section.addEventListener('input', async () => {
+      // Logic to save back to disk via ProjectSystem
+      // For now, let's keep it in memory
+      console.log("Material instance updated in memory:", material.name);
+
+      // OPTIONAL: Persistence logic
+      /*
+      const data = material.serialize();
+      // Need a ProjectSystem.saveMaterial(path, data)
+      */
+    });
+
+    this.appendChild(section);
   }
 }
 

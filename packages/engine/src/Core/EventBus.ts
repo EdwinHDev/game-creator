@@ -51,6 +51,20 @@ export class EventBus {
   }
 
   /**
+   * Alias for emit. Dispatches an event to all subscribers.
+   */
+  public static dispatch(event: string, ...args: any[]): void {
+    this.emit(event, ...args);
+  }
+
+  /**
+   * Alias for on. Subscribes a callback to a specific event.
+   */
+  public static subscribe(event: string, callback: Function): void {
+    this.on(event, callback);
+  }
+
+  /**
    * Clears all handlers for all events.
    */
   public static clear(): void {

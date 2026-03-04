@@ -13,11 +13,10 @@ export class UMeshComponent extends USceneComponent {
   public topology: GPUPrimitiveTopology = 'triangle-list';
   public isGizmo: boolean = false; // Phase 17.9.7: Flag for X-Ray rendering
   public material: UMaterial | null = null;
-  public baseColorTexture: GPUTexture | null = null;
+  public materialPath: string | null = null;
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
     super(owner, name);
-    this.material = new UMaterial();
   }
 
   /**
@@ -107,8 +106,31 @@ export class UMeshComponent extends USceneComponent {
     new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
     this.indexBuffer.unmap();
 
-    // Initialize default material
-    if (!this.material) this.material = new UMaterial();
+    // Initialize default material if none
+    if (!this.material && !this.materialPath) this.material = new UMaterial();
+  }
+
+  /**
+   * Serializes the component's data.
+   */
+  public override serialize(): any {
+    const data = super.serialize();
+    return {
+      ...data,
+      materialPath: this.materialPath
+    };
+  }
+
+  /**
+   * Deserializes the component's data.
+   */
+  public override async deserialize(data: any): Promise<void> {
+    await super.deserialize(data);
+    if (data.materialPath) {
+      this.materialPath = data.materialPath;
+      // We don't load here because we need the device, 
+      // which is usually handled by the ProjectSystem or Renderer.
+    }
   }
 
   /**
@@ -435,10 +457,16 @@ export class UMeshComponent extends USceneComponent {
 
       // Link to appropriate UMaterial slot
       if (this.material) {
-        this.material.assetPath = url; // Store the relative path
-        if (type === 'albedo') this.material.baseColorTexture = newTexture;
-        else if (type === 'roughness') this.material.roughnessTexture = newTexture;
-        else if (type === 'normal') this.material.normalTexture = newTexture;
+        if (type === 'albedo') {
+          this.material.baseColorTexture = newTexture;
+          this.material.albedoMapPath = url;
+        } else if (type === 'roughness') {
+          this.material.roughnessTexture = newTexture;
+          this.material.roughnessMapPath = url;
+        } else if (type === 'normal') {
+          this.material.normalTexture = newTexture;
+          this.material.normalMapPath = url;
+        }
 
         this.material.isDirty = true;
       } else {
