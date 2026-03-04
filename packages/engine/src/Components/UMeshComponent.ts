@@ -171,17 +171,17 @@ export class UMeshComponent extends USceneComponent {
 
       // Line along X (Vertical-ish)
       const xColor = isCenter ? zAxisColor : grayColor;
-      vertices.push(linePos, 0, -halfSize, ...xColor, 0, 0, 1, 0, 0, 1);
-      vertices.push(linePos, 0, halfSize, ...xColor, 0, 0, 1, 0, 0, 1);
+      vertices.push(linePos, 0, -halfSize, ...xColor);
+      vertices.push(linePos, 0, halfSize, ...xColor);
 
       // Line along Z (Horizontal-ish)
       const zColor = isCenter ? xAxisColor : grayColor;
-      vertices.push(-halfSize, 0, linePos, ...zColor, 0, 0, 1, 0, 0, 1);
-      vertices.push(halfSize, 0, linePos, ...zColor, 0, 0, 1, 0, 0, 1);
+      vertices.push(-halfSize, 0, linePos, ...zColor);
+      vertices.push(halfSize, 0, linePos, ...zColor);
     }
 
     const vertexData = new Float32Array(vertices);
-    this.vertexCount = vertexData.length / 12;
+    this.vertexCount = vertexData.length / 6;
 
     this.vertexBuffer = device.createBuffer({
       size: vertexData.byteLength,
@@ -193,58 +193,49 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Generates a solid pyramid for gizmo arrow heads.
+   * Generates a solid pyramid for gizmo arrow heads. (Fixed for 6 floats)
    */
-  public createPyramid(device: GPUDevice, height: number = 0.15, radius: number = 0.05): void {
+  public createPyramid(device: GPUDevice, height: number = 0.15, radius: number = 0.05, color: number[] = [1, 1, 1]): void {
     this.vertexBuffer?.destroy();
     this.topology = 'triangle-list';
 
     const h = height;
     const r = radius;
-
-    // Helper to normalize
-    const norm = (x: number, y: number, z: number): number[] => {
-      const len = Math.sqrt(x * x + y * y + z * z);
-      return [x / len, y / len, z / len];
-    };
-
-    const nf = norm(0, r, h); // Normal Front
-    const nb = norm(0, r, -h); // Normal Back
-    const nr = norm(h, r, 0); // Normal Right
-    const nl = norm(-h, r, 0); // Normal Left
+    const [cr, cg, cb] = color; // Usamos el color directo en lugar de Normales y Tangentes
 
     const vertices = new Float32Array([
       // Front Face
-      0, h, 0, ...nf, 0, 0, 1, 0, 0, 1,
-      -r, 0, r, ...nf, 0, 0, 1, 0, 0, 1,
-      r, 0, r, ...nf, 0, 0, 1, 0, 0, 1,
+      0, h, 0, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
 
       // Back Face
-      0, h, 0, ...nb, 0, 0, 1, 0, 0, 1,
-      r, 0, -r, ...nb, 0, 0, 1, 0, 0, 1,
-      -r, 0, -r, ...nb, 0, 0, 1, 0, 0, 1,
+      0, h, 0, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
 
       // Right Face
-      0, h, 0, ...nr, 0, 0, 1, 0, 0, 1,
-      r, 0, r, ...nr, 0, 0, 1, 0, 0, 1,
-      r, 0, -r, ...nr, 0, 0, 1, 0, 0, 1,
+      0, h, 0, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
 
       // Left Face
-      0, h, 0, ...nl, 0, 0, 1, 0, 0, 1,
-      -r, 0, -r, ...nl, 0, 0, 1, 0, 0, 1,
-      -r, 0, r, ...nl, 0, 0, 1, 0, 0, 1,
+      0, h, 0, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
 
       // Base
-      -r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
-      r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
-      r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
-      -r, 0, -r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
-      r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
-      -r, 0, r, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      -r, 0, -r, cr, cg, cb,
+      r, 0, -r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      -r, 0, -r, cr, cg, cb,
+      r, 0, r, cr, cg, cb,
+      -r, 0, r, cr, cg, cb,
     ]);
 
-    this.vertexCount = vertices.length / 12; // Phase 34
+    this.vertexCount = vertices.length / 6; // Vuelve a la normalidad
     this.indexCount = 0;
+
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -264,11 +255,11 @@ export class UMeshComponent extends USceneComponent {
 
     const [r, g, b] = color;
     const vertices = new Float32Array([
-      0, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
-      0, length, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, 0, 0, r, g, b,
+      0, length, 0, r, g, b,
     ]);
 
-    this.vertexCount = vertices.length / 12;
+    this.vertexCount = vertices.length / 6;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -290,20 +281,20 @@ export class UMeshComponent extends USceneComponent {
     const s = size;
     const [r, g, b] = color;
     const vertices = new Float32Array([
-      0, s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, s, 0, r, g, b,
+      s, 0, 0, r, g, b,
 
-      s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
-      0, -s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      s, 0, 0, r, g, b,
+      0, -s, 0, r, g, b,
 
-      0, -s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      0, -s, 0, r, g, b,
+      -s, 0, 0, r, g, b,
 
-      -s, 0, 0, r, g, b, 0, 0, 1, 0, 0, 1,
-      0, s, 0, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, 0, 0, r, g, b,
+      0, s, 0, r, g, b,
     ]);
 
-    this.vertexCount = vertices.length / 12;
+    this.vertexCount = vertices.length / 6;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -324,20 +315,20 @@ export class UMeshComponent extends USceneComponent {
 
     const s = size * 0.5;
     const vertices = new Float32Array([
-      -s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -s, s, 0, 0, 1, 0,
+      s, s, 0, 0, 1, 0,
 
-      s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      s, s, 0, 0, 1, 0,
+      s, -s, 0, 0, 1, 0,
 
-      s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      -s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      s, -s, 0, 0, 1, 0,
+      -s, -s, 0, 0, 1, 0,
 
-      -s, -s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      -s, s, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -s, -s, 0, 0, 1, 0,
+      -s, s, 0, 0, 1, 0,
     ]);
 
-    this.vertexCount = vertices.length / 12;
+    this.vertexCount = vertices.length / 6;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -357,8 +348,8 @@ export class UMeshComponent extends USceneComponent {
     this.topology = 'line-list';
 
     const [r, g, b] = color;
-    // 2 vertices per segment * 12 floats (48 bytes)
-    const vertices = new Float32Array(segments * 2 * 12);
+    // Gizmos use colorVertexBuffers (24 bytes) = 6 floats
+    const vertices = new Float32Array(segments * 2 * 6);
     for (let i = 0; i < segments; i++) {
       const angle1 = (i / segments) * Math.PI * 2;
       const angle2 = ((i + 1) / segments) * Math.PI * 2;
@@ -376,18 +367,16 @@ export class UMeshComponent extends USceneComponent {
         x2 = Math.cos(angle2) * radius; y2 = Math.sin(angle2) * radius; z2 = 0;
       }
 
-      const off = i * 24;
+      const off = i * 12;
       // Vert 1
       vertices[off + 0] = x1; vertices[off + 1] = y1; vertices[off + 2] = z1;
       vertices[off + 3] = r; vertices[off + 4] = g; vertices[off + 5] = b;
-      vertices[off + 6] = 0; vertices[off + 7] = 0; vertices[off + 8] = 1; vertices[off + 9] = 0; vertices[off + 10] = 0; vertices[off + 11] = 1;
       // Vert 2
-      vertices[off + 12] = x2; vertices[off + 13] = y2; vertices[off + 14] = z2;
-      vertices[off + 15] = r; vertices[off + 16] = g; vertices[off + 17] = b;
-      vertices[off + 18] = 0; vertices[off + 19] = 0; vertices[off + 20] = 1; vertices[off + 21] = 0; vertices[off + 22] = 0; vertices[off + 23] = 1;
+      vertices[off + 6] = x2; vertices[off + 7] = y2; vertices[off + 8] = z2;
+      vertices[off + 9] = r; vertices[off + 10] = g; vertices[off + 11] = b;
     }
 
-    this.vertexCount = vertices.length / 12;
+    this.vertexCount = vertices.length / 6;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
@@ -417,16 +406,16 @@ export class UMeshComponent extends USceneComponent {
       const z2 = Math.sin(a2) * radius;
 
       // Base edge
-      vertices.push(x1, 0, z1, 0, 1, 0, 0, 0, 1, 0, 0, 1);
-      vertices.push(x2, 0, z2, 0, 1, 0, 0, 0, 1, 0, 0, 1);
+      vertices.push(x1, 0, z1, 0, 1, 0);
+      vertices.push(x2, 0, z2, 0, 1, 0);
 
       // Line to tip
-      vertices.push(x1, 0, z1, 0, 1, 0, 0, 0, 1, 0, 0, 1);
-      vertices.push(0, height, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1);
+      vertices.push(x1, 0, z1, 0, 1, 0);
+      vertices.push(0, height, 0, 0, 1, 0);
     }
 
     const vertexData = new Float32Array(vertices);
-    this.vertexCount = vertexData.length / 12;
+    this.vertexCount = vertexData.length / 6;
     this.indexCount = 0;
     this.vertexBuffer = device.createBuffer({
       size: vertexData.byteLength,
@@ -439,7 +428,7 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
-   * Generates a line-based cube for scale gizmo tips.
+   * Generates a line-based cube for scale gizmo tips. (Fixed for 6 floats)
    */
   public createGizmoCube(device: GPUDevice, size: number = 0.5, color: number[] = [1, 1, 1]): void {
     this.vertexBuffer?.destroy();
@@ -447,40 +436,43 @@ export class UMeshComponent extends USceneComponent {
 
     const s = size * 0.5;
     const [r, g, b] = color;
+
+    // Eliminamos los ', 0, 0, 1, 0, 0, 1' que habías añadido de más
     const vertices = new Float32Array([
       // Front face
-      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, s, r, g, b,
+      s, -s, s, r, g, b,
+      s, -s, s, r, g, b,
+      s, s, s, r, g, b,
+      s, s, s, r, g, b,
+      -s, s, s, r, g, b,
+      -s, s, s, r, g, b,
+      -s, -s, s, r, g, b,
 
       // Back face
-      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, -s, r, g, b,
+      s, -s, -s, r, g, b,
+      s, -s, -s, r, g, b,
+      s, s, -s, r, g, b,
+      s, s, -s, r, g, b,
+      -s, s, -s, r, g, b,
+      -s, s, -s, r, g, b,
+      -s, -s, -s, r, g, b,
 
       // Connecting lines
-      -s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, -s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, s, r, g, b, 0, 0, 1, 0, 0, 1,
-      -s, s, -s, r, g, b, 0, 0, 1, 0, 0, 1,
+      -s, -s, s, r, g, b,
+      -s, -s, -s, r, g, b,
+      s, -s, s, r, g, b,
+      s, -s, -s, r, g, b,
+      s, s, s, r, g, b,
+      s, s, -s, r, g, b,
+      -s, s, s, r, g, b,
+      -s, s, -s, r, g, b,
     ]);
 
-    this.vertexCount = vertices.length / 12;
+    this.vertexCount = vertices.length / 6; // Vuelve a la normalidad
     this.indexCount = 0;
+
     this.vertexBuffer = device.createBuffer({
       size: vertices.byteLength,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -569,6 +561,70 @@ export class UMeshComponent extends USceneComponent {
     this.indexBuffer.unmap();
 
     if (!this.material) this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a solid colored sphere specifically for 6-float Gizmo pipelines.
+   */
+  public createGizmoSphere(device: GPUDevice, radius: number = 0.05, segments: number = 16, color: number[] = [1, 1, 1]): void {
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+    this.topology = 'triangle-list';
+
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    const [r, g, b] = color;
+
+    for (let y = 0; y <= segments; y++) {
+      const v = y / segments;
+      const phi = v * Math.PI;
+
+      for (let x = 0; x <= segments; x++) {
+        const u = x / segments;
+        const theta = u * Math.PI * 2;
+
+        const px = radius * Math.sin(phi) * Math.cos(theta);
+        const py = radius * Math.cos(phi);
+        const pz = radius * Math.sin(phi) * Math.sin(theta);
+
+        // Exactamente 6 floats! (Posición y Color)
+        vertices.push(px, py, pz, r, g, b);
+      }
+    }
+
+    for (let y = 0; y < segments; y++) {
+      for (let x = 0; x < segments; x++) {
+        const i1 = y * (segments + 1) + x;
+        const i2 = i1 + 1;
+        const i3 = (y + 1) * (segments + 1) + x;
+        const i4 = i3 + 1;
+
+        indices.push(i1, i3, i2);
+        indices.push(i2, i3, i4);
+      }
+    }
+
+    const vertexData = new Float32Array(vertices);
+    this.vertexCount = vertexData.length / 6;
+    this.indexCount = indices.length;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertexData.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertexData);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indices.length * 2,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
+    this.indexBuffer.unmap();
+
+    this.material = new UMaterial();
   }
 
   /**

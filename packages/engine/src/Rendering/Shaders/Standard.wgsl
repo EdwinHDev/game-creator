@@ -92,30 +92,29 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let texColor = textureSample(albedoMap, baseColorSampler, in.uv);
     let texRoughness = textureSample(roughnessMap, baseColorSampler, in.uv).r;
     
-    // Phase 34: Normal Mapping using TBN matrix
-    let rawNormal = textureSample(normalMap, baseColorSampler, in.uv).xyz;
-    // Expand from [0, 1] to [-1, 1]
-    let normalMapVector = rawNormal * 2.0 - 1.0;
-    
-    // Calculate TBN Matrix
-    let geoNormal = normalize(in.normal);
-    let tangent = normalize(in.tangent.xyz);
-    
-    // Gram-Schmidt orthogonalization to ensure T is orthogonal to N
-    let T = normalize(tangent - dot(tangent, geoNormal) * geoNormal);
-    // Calculate Bitangent taking the handedness (w component) into account
-    let B = cross(geoNormal, T) * in.tangent.w;
+    // Phase 34.1: Anti-NaN Shield
+    var N = normalize(in.normal);
 
-    let TBN = mat3x3<f32>(T, B, geoNormal);
-    
-    // Final World Space Normal to be used in all lighting equations
-    let finalNormal = normalize(TBN * normalMapVector);
+    // 1. Lectura uniforme para TODOS los píxeles (Requisito estricto de WebGPU)
+    let mapNormal = textureSample(normalMap, baseColorSampler, in.uv).rgb;
+    let localNormal = mapNormal * 2.0 - 1.0;
+
+    // Solo calculamos el relieve si la tangente existe y no es cero
+    if (length(in.tangent.xyz) > 0.001) {
+        let T = normalize(in.tangent.xyz);
+        let B = normalize(cross(N, T)) * in.tangent.w;
+        let TBN = mat3x3<f32>(T, B, N);
+        
+        // Si no es la textura dummy plana
+        if (length(localNormal) > 0.01) { 
+            N = normalize(TBN * localNormal); // <- Sobreescribimos la variable N aquí
+        }
+    }
     
     let diffuseColor = uniforms.baseColor.rgb * texColor.rgb;
     let finalRoughness = uniforms.roughness * texRoughness;
 
     let cameraPos = scene.cameraPosition.xyz;
-    let N = finalNormal; // Replace geometric normal with Normal Mapped Normal
     let V = normalize(cameraPos - in.worldPos);
     let L = normalize(-scene.lightDirection.xyz);
     let H = normalize(V + L);

@@ -434,9 +434,10 @@ export class GizmoManager {
         if (this.currentTransformMode === 'rotate') mesh.createCircle(device, 1.1, 64, color, name.split('_')[1] as any);
         else mesh.createGizmoAxis(device, 1.0, color);
       } else {
-        if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05);
+        if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05, color);
         else if (this.currentTransformMode === 'scale') {
-          mesh.createBox(device);
+          // Phase 34.5: Color support for Scaling Gizmo Box tips
+          mesh.createGizmoCube(device, 0.5, color);
           vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085);
         }
         if (mesh.material) {
@@ -474,8 +475,8 @@ export class GizmoManager {
       this.lightDirectionTip = this._world.spawnActor(AActor, 'LightDirectionHandle', true);
       const tipMesh = this.lightDirectionTip.addComponent(UMeshComponent);
       this.lightDirectionTip.rootComponent = tipMesh;
-      // Phase 21: Use real sphere geometry
-      tipMesh.createSphere(device, 0.05, 16, 16);
+      // Phase 34.6: Use lightweight gizmo sphere geometry
+      tipMesh.createGizmoSphere(device, 0.05, 16, lightCol);
       if (tipMesh.material) {
         tipMesh.material.baseColor = new Float32Array([...lightCol, 1.0]);
       }
