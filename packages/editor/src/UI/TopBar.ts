@@ -119,8 +119,10 @@ export class TopBar extends HTMLElement {
             </button>
             <div class="dropdown-content dropdown-right">
               <button id="btn-spawn-cube" class="dropdown-button">Cube</button>
-              <button class="dropdown-button">Sphere</button>
-              <button class="dropdown-button">Plane</button>
+              <button id="btn-spawn-sphere" class="dropdown-button">Sphere</button>
+              <button id="btn-spawn-plane" class="dropdown-button">Plane</button>
+              <button id="btn-spawn-cylinder" class="dropdown-button">Cylinder</button>
+              <button id="btn-spawn-capsule" class="dropdown-button">Capsule</button>
             </div>
           </div>
         </div>
@@ -330,10 +332,20 @@ export class TopBar extends HTMLElement {
       }
     });
 
-    const addBtn = this.querySelector('#btn-spawn-cube');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => this.spawnCube());
-    }
+    const spawnTypes = [
+      { id: 'btn-spawn-cube', type: 'Cube' },
+      { id: 'btn-spawn-sphere', type: 'Sphere' },
+      { id: 'btn-spawn-plane', type: 'Plane' },
+      { id: 'btn-spawn-cylinder', type: 'Cylinder' },
+      { id: 'btn-spawn-capsule', type: 'Capsule' }
+    ];
+
+    spawnTypes.forEach(spawnDef => {
+      const btn = this.querySelector(`#${spawnDef.id}`);
+      if (btn) {
+        btn.addEventListener('click', () => this.spawnPrimitive(spawnDef.type));
+      }
+    });
 
     const spaceBtn = this.querySelector('#btn-toggle-space') as HTMLButtonElement;
     if (spaceBtn) {
@@ -359,7 +371,7 @@ export class TopBar extends HTMLElement {
     }
   }
 
-  private spawnCube() {
+  private spawnPrimitive(type: string) {
     if (!this.engine) return;
 
     const world = this.engine.getWorld();
@@ -387,18 +399,22 @@ export class TopBar extends HTMLElement {
     }
 
     // 2. Spawn the actor
-    const cubeCount = actors.filter((a: any) => a.name.startsWith('Cube_')).length;
-    const newCube = world.spawnActor(AActor, `Cube_${cubeCount + 1}`);
-    const mesh = newCube.addComponent(UMeshComponent);
-    newCube.rootComponent = mesh;
+    const itemCount = actors.filter((a: any) => a.name.startsWith(`${type}_`)).length;
+    const newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
+    const mesh = newActor.addComponent(UMeshComponent);
+    newActor.rootComponent = mesh;
 
     // Set position
     vec3.copy(mesh.relativeLocation, spawnPos);
 
-    // Create GPU buffers
-    mesh.createBox(device);
+    // Create GPU buffers based on primitive type
+    if (type === 'Cube') mesh.createBox(device);
+    else if (type === 'Sphere') mesh.createSphere(device, 1.0, 32);
+    else if (type === 'Plane') mesh.createPlane(device, 2.0, 10);
+    else if (type === 'Cylinder') mesh.createCylinder(device, 1.0, 2.0, 32);
+    else if (type === 'Capsule') mesh.createCapsule(device, 0.5, 2.0, 32, 16);
 
-    console.log(`Spawned new cube at ${spawnPos}`);
+    console.log(`Spawned new ${type} at ${spawnPos}`);
   }
 
   private setupStyles() {

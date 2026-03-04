@@ -112,6 +112,306 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
+   * Generates a flat subdivided plane on the XZ axis.
+   * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
+   */
+  public createPlane(device: GPUDevice, size: number = 1.0, segments: number = 10): void {
+    this.topology = 'triangle-list';
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+
+    const verts: number[] = [];
+    const inds: number[] = [];
+    const halfSize = size / 2;
+    const step = size / segments;
+
+    for (let z = 0; z <= segments; z++) {
+      for (let x = 0; x <= segments; x++) {
+        const posX = -halfSize + x * step;
+        const posZ = -halfSize + z * step;
+        const u = x / segments;
+        const v = z / segments;
+
+        // Position, Normal (0,1,0), UV, Tangent (1,0,0,1)
+        verts.push(posX, 0, posZ, 0, 1, 0, u, v, 1, 0, 0, 1);
+      }
+    }
+
+    for (let z = 0; z < segments; z++) {
+      for (let x = 0; x < segments; x++) {
+        const i0 = z * (segments + 1) + x;
+        const i1 = i0 + 1;
+        const i2 = i0 + (segments + 1);
+        const i3 = i2 + 1;
+
+        // Triangles
+        inds.push(i0, i2, i1);
+        inds.push(i1, i2, i3);
+      }
+    }
+
+    const vertices = new Float32Array(verts);
+    const indices = new Uint16Array(inds);
+
+    this.vertexCount = vertices.length / 12;
+    this.indexCount = indices.length;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
+    this.indexBuffer.unmap();
+
+    if (!this.material) this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a cylinder oriented on the Y axis.
+   * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
+   */
+  public createCylinder(device: GPUDevice, radius: number = 1.0, height: number = 2.0, segments: number = 32): void {
+    this.topology = 'triangle-list';
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+
+    const verts: number[] = [];
+    const inds: number[] = [];
+    const halfHeight = height / 2;
+
+    // Body (walls)
+    for (let y = 0; y <= 1; y++) {
+      const v = 1 - y;
+      const posY = y === 0 ? -halfHeight : halfHeight;
+      for (let x = 0; x <= segments; x++) {
+        const u = x / segments;
+        const theta = u * Math.PI * 2;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+
+        const posX = radius * sinTheta;
+        const posZ = radius * cosTheta;
+
+        // Normal points outwards from center
+        // Tangent points along the circumference
+        verts.push(
+          posX, posY, posZ,
+          sinTheta, 0, cosTheta, // nx, ny, nz
+          u, v,                  // u, v
+          cosTheta, 0, -sinTheta, 1 // tx, ty, tz, tw
+        );
+      }
+    }
+
+    // Body Indices
+    for (let x = 0; x < segments; x++) {
+      const i0 = x;
+      const i1 = x + 1;
+      const i2 = x + (segments + 1);
+      const i3 = i2 + 1;
+
+      inds.push(i0, i1, i2);
+      inds.push(i1, i3, i2);
+    }
+
+    // Caps
+    const buildCap = (isTop: boolean) => {
+      const sign = isTop ? 1 : -1;
+      const posY = halfHeight * sign;
+      const centerIdx = verts.length / 12;
+
+      // Center point
+      verts.push(
+        0, posY, 0,
+        0, sign, 0,
+        0.5, 0.5,
+        1, 0, 0, 1
+      );
+
+      const startIndex = verts.length / 12;
+
+      for (let x = 0; x <= segments; x++) {
+        const theta = (x / segments) * Math.PI * 2;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+
+        // Map UVs circle into square 0-1
+        const u = 0.5 + (sinTheta * 0.5);
+        const v = 0.5 + (cosTheta * 0.5 * sign); // Flip V for bottom cap matching top visually
+
+        verts.push(
+          radius * sinTheta, posY, radius * cosTheta,
+          0, sign, 0,
+          u, v,
+          1, 0, 0, 1
+        );
+      }
+
+      for (let x = 0; x < segments; x++) {
+        if (isTop) {
+          inds.push(centerIdx, startIndex + x, startIndex + x + 1);
+        } else {
+          inds.push(centerIdx, startIndex + x + 1, startIndex + x);
+        }
+      }
+    };
+
+    buildCap(true);  // Top Cap
+    buildCap(false); // Bottom Cap
+
+    const vertices = new Float32Array(verts);
+    const indices = new Uint16Array(inds);
+
+    this.vertexCount = vertices.length / 12;
+    this.indexCount = indices.length;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
+    this.indexBuffer.unmap();
+
+    if (!this.material) this.material = new UMaterial();
+  }
+
+  /**
+   * Generates a capsule oriented on the Y axis.
+   * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
+   */
+  public createCapsule(device: GPUDevice, radius: number = 0.5, height: number = 2.0, radialSegments: number = 32, heightSegments: number = 16): void {
+    this.topology = 'triangle-list';
+    this.vertexBuffer?.destroy();
+    this.indexBuffer?.destroy();
+
+    const verts: number[] = [];
+    const inds: number[] = [];
+
+    // The cylinder part height is total height minus the two hemispheres
+    const cylinderHeight = Math.max(0, height - (radius * 2));
+    const halfCylHeight = cylinderHeight / 2;
+
+    let indexCount = 0;
+    const indexRow: number[][] = [];
+
+    // Calculate total segments
+    // Top Hemisphere (0 to PI/2)
+    // Cylinder Body 
+    // Bottom Hemisphere (PI/2 to PI)
+
+    const halfHeightSegments = Math.max(2, Math.floor(heightSegments / 2));
+
+    const buildRing = (yOffset: number, phiStart: number, phiEnd: number, hSegments: number) => {
+      for (let y = 0; y <= hSegments; y++) {
+        const indexRowArray: number[] = [];
+        const vRatio = y / hSegments;
+        const phi = phiStart + vRatio * (phiEnd - phiStart);
+
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        for (let x = 0; x <= radialSegments; x++) {
+          const u = x / radialSegments;
+          const theta = u * Math.PI * 2;
+          const sinTheta = Math.sin(theta);
+          const cosTheta = Math.cos(theta);
+
+          // Position
+          const posX = radius * sinPhi * sinTheta;
+          const posY = radius * cosPhi + yOffset;
+          const posZ = radius * sinPhi * cosTheta;
+
+          // Normal
+          const nx = sinPhi * sinTheta;
+          const ny = cosPhi;
+          const nz = sinPhi * cosTheta;
+
+          // Tangent
+          const tx = cosTheta;
+          const ty = 0;
+          const tz = -sinTheta;
+
+          // Adjust V coordinate based on overall vertical position
+          // Total height = height
+          // Current absolute Y = posY
+          // Convert from Y [-height/2, height/2] to V [1, 0]
+          const v = 1.0 - ((posY + (height / 2)) / height);
+
+          verts.push(posX, posY, posZ, nx, ny, nz, u, v, tx, ty, tz, 1);
+          indexRowArray.push(indexCount++);
+        }
+        indexRow.push(indexRowArray);
+      }
+    };
+    // 1. Top Hemisphere
+    buildRing(halfCylHeight, 0, Math.PI / 2, halfHeightSegments);
+
+    // 2. Cylinder Body (if any)
+    if (cylinderHeight > 0) {
+      // We add a ring at the bottom of the cylinder body to ensure valid UV interpolation down the wall
+      buildRing(-halfCylHeight, Math.PI / 2, Math.PI / 2, 1);
+    }
+
+    // 3. Bottom Hemisphere
+    buildRing(-halfCylHeight, Math.PI / 2, Math.PI, halfHeightSegments);
+
+    // Generate Indices
+    for (let r = 0; r < indexRow.length - 1; r++) {
+      for (let c = 0; c < radialSegments; c++) {
+        const i0 = indexRow[r][c];
+        const i1 = indexRow[r + 1][c];
+        const i2 = indexRow[r + 1][c + 1];
+        const i3 = indexRow[r][c + 1];
+
+        inds.push(i0, i1, i2);
+        inds.push(i0, i2, i3);
+      }
+    }
+
+    const vertices = new Float32Array(verts);
+    const indices = new Uint16Array(inds);
+
+    this.vertexCount = vertices.length / 12;
+    this.indexCount = indices.length;
+
+    this.vertexBuffer = device.createBuffer({
+      size: vertices.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
+    this.vertexBuffer.unmap();
+
+    this.indexBuffer = device.createBuffer({
+      size: indices.byteLength,
+      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
+    this.indexBuffer.unmap();
+
+    if (!this.material) this.material = new UMaterial();
+  }
+
+  /**
    * Phase 29.1: Texture Loading
    * Asynchronously loads an image from an URL and creates a WebGPU texture.
    */
@@ -601,8 +901,8 @@ export class UMeshComponent extends USceneComponent {
         const i3 = (y + 1) * (segments + 1) + x;
         const i4 = i3 + 1;
 
-        indices.push(i1, i3, i2);
-        indices.push(i2, i3, i4);
+        indices.push(i1, i2, i3);
+        indices.push(i2, i4, i3);
       }
     }
 
