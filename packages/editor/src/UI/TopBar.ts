@@ -1,4 +1,4 @@
-import { AActor, EventBus, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
+import { AActor, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
 import { vec3 } from 'gl-matrix';
@@ -140,6 +140,8 @@ export class TopBar extends HTMLElement {
               <button id="btn-spawn-plane" class="dropdown-button">Plane</button>
               <button id="btn-spawn-cylinder" class="dropdown-button">Cylinder</button>
               <button id="btn-spawn-capsule" class="dropdown-button">Capsule</button>
+              <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
+              <button id="btn-spawn-light" class="dropdown-button" style="color: var(--accent-color);">Directional Light</button>
             </div>
           </div>
         </div>
@@ -336,7 +338,8 @@ export class TopBar extends HTMLElement {
       { id: 'btn-spawn-sphere', type: 'Sphere' },
       { id: 'btn-spawn-plane', type: 'Plane' },
       { id: 'btn-spawn-cylinder', type: 'Cylinder' },
-      { id: 'btn-spawn-capsule', type: 'Capsule' }
+      { id: 'btn-spawn-capsule', type: 'Capsule' },
+      { id: 'btn-spawn-light', type: 'DirectionalLight' }
     ];
 
     spawnTypes.forEach(spawnDef => {
@@ -418,18 +421,33 @@ export class TopBar extends HTMLElement {
 
     const itemCount = actors.filter((a: any) => a.name.startsWith(`${type}_`)).length;
     const newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
-    const mesh = newActor.addComponent(UMeshComponent);
-    newActor.rootComponent = mesh;
 
-    vec3.copy(mesh.relativeLocation, spawnPos);
+    if (type === 'DirectionalLight') {
+      const light = newActor.addComponent(UDirectionalLightComponent);
+      newActor.rootComponent = light;
+      light.intensity = 5.0;
+      light.castShadows = true;
+      vec3.set(light.relativeLocation, 10, 20, 10);
+      vec3.set(light.relativeRotation, -45, 45, 0);
+      EditorLogger.info(`Spawned new Directional Light`);
+    } else {
+      const mesh = newActor.addComponent(UMeshComponent);
+      newActor.rootComponent = mesh;
+      vec3.copy(mesh.relativeLocation, spawnPos);
 
-    if (type === 'Cube') mesh.createBox(device);
-    else if (type === 'Sphere') mesh.createSphere(device, 1.0, 32);
-    else if (type === 'Plane') mesh.createPlane(device, 2.0, 10);
-    else if (type === 'Cylinder') mesh.createCylinder(device, 1.0, 2.0, 32);
-    else if (type === 'Capsule') mesh.createCapsule(device, 0.5, 2.0, 32, 16);
+      if (type === 'Cube') mesh.createBox(device);
+      else if (type === 'Sphere') mesh.createSphere(device, 1.0, 32);
+      else if (type === 'Plane') mesh.createPlane(device, 2.0, 10);
+      else if (type === 'Cylinder') mesh.createCylinder(device, 1.0, 2.0, 32);
+      else if (type === 'Capsule') mesh.createCapsule(device, 0.5, 2.0, 32, 16);
 
-    EditorLogger.info(`Spawned new ${type} at ${spawnPos}`);
+      EditorLogger.info(`Spawned new ${type} at ${spawnPos}`);
+    }
+
+    import('@game-creator/engine').then(({ EventBus }) => {
+      EventBus.dispatch('OnActorSelected', newActor);
+      EventBus.emit('OnWorldChanged', {});
+    });
   }
 
   private setupStyles() {

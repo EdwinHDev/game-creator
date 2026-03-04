@@ -131,25 +131,28 @@ export class AActor extends UObject {
    */
   public async deserialize(data: any): Promise<void> {
     this.name = data.name;
+    this.components = []; // Clear for Phase 52 to avoid zombi objects
 
-    // Components are often created in the constructor or manually added.
-    // For Phase 1, we assume the components are already there or need to be recreated.
-    // A more robust system would handle component mapping.
+    // Import components dynamic to avoid circular dependencies if any
+    const { UTransformComponent } = await import('../Components/UTransformComponent');
+    const { UMeshComponent } = await import('../Components/UMeshComponent');
+    const { UDirectionalLightComponent } = await import('../Components/UDirectionalLightComponent');
+
     for (const compData of data.components) {
-      let component = this.components.find(c => c.constructor.name === compData.type && c.name === compData.name);
+      let comp: any = null;
 
-      if (component instanceof USceneComponent) {
-        component.deserialize(compData);
-      }
+      if (compData.type === 'UTransformComponent') comp = new UTransformComponent(this);
+      else if (compData.type === 'UMeshComponent') comp = new UMeshComponent(this);
+      else if (compData.type === 'UDirectionalLightComponent') comp = new UDirectionalLightComponent(this);
 
-      // Handle mesh specifics if needed (like re-creating geometry)
-      if (compData.type === 'UMeshComponent' && component) {
-        const meshComp = component as any;
-        if (compData.material && meshComp.material) {
-          if (compData.material.baseColor) {
-            meshComp.material.baseColor.set(compData.material.baseColor);
-          }
-          // Texture loading would happen via ProjectSystem helper usually
+      if (comp) {
+        Object.assign(comp, compData);
+        this.components.push(comp);
+
+        // Restore root component if it was the first one or specifically marked
+        // In this engine, the first scene component usually becomes the root
+        if (!this.rootComponent && comp instanceof USceneComponent) {
+          this.rootComponent = comp;
         }
       }
     }

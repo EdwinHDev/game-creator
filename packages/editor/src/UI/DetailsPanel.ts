@@ -430,12 +430,15 @@ export class DetailsPanel extends HTMLElement {
     section.style.padding = '15px';
     section.style.borderTop = '1px solid var(--border-color)';
 
+    const materialName = mesh.materialPath ? mesh.materialPath.split('/').pop() : 'None (Default)';
+
     section.innerHTML = `
       <div style="font-size: 10px; font-weight: bold; margin-bottom: 10px; opacity: 0.6;">MESH MATERIAL</div>
       <div class="input-group">
         <label>Material Asset</label>
-        <div id="material-slot" style="padding: 8px; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: 4px; font-size: 11px; cursor: pointer; text-align: center;">
-          ${mesh.materialPath || 'None (Using Default)'}
+        <div id="material-slot" style="display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-surface); border: 1px dashed var(--border-color); border-radius: 4px; cursor: pointer; transition: background 0.2s;">
+          <div id="mat-circle" style="width: 20px; height: 20px; border-radius: 50%; background-color: ${mesh.materialPath ? 'var(--accent-color)' : '#444'}; box-shadow: inset -3px -3px 6px rgba(0,0,0,0.4); border: 1px solid var(--border-color); flex-shrink: 0;"></div>
+          <span id="mat-name-text" style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-main); flex: 1;">${materialName}</span>
         </div>
       </div>
     `;
@@ -446,7 +449,11 @@ export class DetailsPanel extends HTMLElement {
       // For now, if a material is selected in Content Browser, we assign it.
       if (this.selectedAssetName?.endsWith('.mat')) {
         mesh.materialPath = `Materials/${this.selectedAssetName}`;
-        slot.textContent = mesh.materialPath;
+
+        const matCircle = slot.querySelector('#mat-circle') as HTMLElement;
+        const matText = slot.querySelector('#mat-name-text') as HTMLElement;
+        if (matCircle) matCircle.style.backgroundColor = 'var(--accent-color)';
+        if (matText) matText.textContent = this.selectedAssetName;
 
         // Phase 2 logic: Update resources
         const { UAssetManager, Engine } = await import('@game-creator/engine');
@@ -485,7 +492,11 @@ export class DetailsPanel extends HTMLElement {
           const dragData = JSON.parse(dataStr);
           if (dragData.type === 'material') {
             mesh.materialPath = `Materials/${dragData.name}`;
-            slot.textContent = mesh.materialPath;
+
+            const matCircle = slot.querySelector('#mat-circle') as HTMLElement;
+            const matText = slot.querySelector('#mat-name-text') as HTMLElement;
+            if (matCircle) matCircle.style.backgroundColor = 'var(--accent-color)';
+            if (matText) matText.textContent = dragData.name;
 
             // Load material via Engine
             const { UAssetManager, Engine } = await import('@game-creator/engine');
