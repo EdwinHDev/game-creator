@@ -92,7 +92,6 @@ export class AppShell extends HTMLElement {
       <div class="app-container">
         <header class="top-bar">
           <div class="logo">GAME CREATOR</div>
-          <div class="menu">File | Edit | View | Help</div>
           <gc-topbar id="main-topbar"></gc-topbar>
         </header>
 

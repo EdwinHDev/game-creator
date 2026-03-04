@@ -30,7 +30,14 @@ export class Resizer extends HTMLElement {
     this.innerHTML = `
       <div class="resizer-handle"></div>
       <button class="resizer-collapse-btn" title="Toggle Panel">
-        <div class="btn-icon"></div>
+        <!-- SVG for expanded state (pointing towards panel) -->
+        <svg class="icon-arrow icon-collapse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+        <!-- SVG for collapsed state (pointing away from panel) -->
+        <svg class="icon-arrow icon-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
       </button>
       <style>
         .gc-resizer {
@@ -106,12 +113,19 @@ export class Resizer extends HTMLElement {
           transform: translate(-50%, -50%) rotate(90deg) scale(1.1);
         }
 
-        .btn-icon {
-          width: 2px;
-          height: 12px;
-          background-color: rgba(255, 255, 255, 0.9);
-          border-radius: 1px;
+        .icon-arrow {
+          width: 14px;
+          height: 14px;
+          color: white;
+          transition: transform 0.2s;
         }
+
+        /* Adjust rotation based on side configured from AppShell */
+        .gc-resizer-vertical[side="right"] .icon-collapse { transform: rotate(180deg); }
+        .gc-resizer-vertical[side="right"] .icon-expand { transform: rotate(180deg); }
+
+        .gc-resizer-horizontal[side="bottom"] .icon-collapse { transform: rotate(180deg); }
+        .gc-resizer-horizontal[side="bottom"] .icon-expand { transform: rotate(180deg); }
       </style>
     `;
   }
@@ -172,12 +186,28 @@ export class Resizer extends HTMLElement {
   private toggleCollapse() {
     const currentVal = parseInt(getComputedStyle(document.documentElement).getPropertyValue(this.targetVar)) || 0;
 
+    let isCollapsing = true;
+
     if (currentVal > 5) {
       this.lastSize = currentVal;
       document.documentElement.style.setProperty(this.targetVar, '0px');
     } else {
+      isCollapsing = false;
       const restoreSize = this.lastSize > 50 ? this.lastSize : 250;
       document.documentElement.style.setProperty(this.targetVar, `${restoreSize}px`);
+    }
+
+    const iconCollapse = this.querySelector('.icon-collapse') as HTMLElement;
+    const iconExpand = this.querySelector('.icon-expand') as HTMLElement;
+
+    if (iconCollapse && iconExpand) {
+      if (isCollapsing) {
+        iconCollapse.style.display = 'none';
+        iconExpand.style.display = 'inline-block';
+      } else {
+        iconCollapse.style.display = 'inline-block';
+        iconExpand.style.display = 'none';
+      }
     }
   }
 }
