@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus, UMaterial } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus } from '@game-creator/engine';
 import { EditorLogger } from './Core/EditorLogger';
 import { ProjectSystem } from './Core/ProjectSystem';
 import './UI/TopBar';
@@ -29,40 +29,12 @@ async function initEngine() {
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 4, 12); // Standard isometric perspective (Phase 13.1)
 
-    // --- Phase 31: Test Cube Texture ---
-    const cubeActor = world.spawnActor(AActor, 'TexturedCube', false);
-    const cubeMesh = cubeActor.addComponent(UMeshComponent);
-    cubeActor.rootComponent = cubeMesh;
-    vec3.set(cubeMesh.relativeLocation, 0, 1.5, 0); // Hover above platform
-    const cubeMat = new UMaterial('CubeMat');
-    cubeMat.roughness = 0.3;
-    cubeMat.metallic = 0.0;
-    cubeMesh.material = cubeMat;
-    cubeMesh.createBox(engine.getRenderer().getDevice()!);
-    // Inject the test UV Checker Texture
-    cubeMesh.loadTexture('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/brick_diffuse.jpg', engine.getRenderer().getDevice()!);
-    // -----------------------------------
-
     // --- Phase 12-13: Editor Grid ---
     const gridActor = world.spawnActor(AActor, 'EditorGrid', true);
     const gridMesh = gridActor.addComponent(UMeshComponent);
     gridActor.rootComponent = gridMesh;
     gridMesh.createGrid(engine.getRenderer().getDevice()!);
     // -----------------------------
-
-    // --- Phase 28: Ground Platform ---
-    const platformActor = world.spawnActor(AActor, 'Platform', false);
-    const platformMesh = platformActor.addComponent(UMeshComponent);
-    platformActor.rootComponent = platformMesh;
-    vec3.set(platformMesh.relativeLocation, 0, -0.25, 0); // Directly underneath grid
-    vec3.set(platformMesh.relativeScale, 20, 0.5, 20); // Wide platform
-    const mat = new UMaterial('PlatformMat');
-    mat.baseColor = new Float32Array([0.2, 0.2, 0.2, 1.0]);
-    mat.roughness = 0.1;
-    mat.metallic = 0.2;
-    platformMesh.material = mat;
-    platformMesh.createBox(engine.getRenderer().getDevice()!);
-    // ---------------------------------
 
     // --- Phase 10: Editor Camera Controller ---
     new EditorCameraController(canvas, cameraActor);

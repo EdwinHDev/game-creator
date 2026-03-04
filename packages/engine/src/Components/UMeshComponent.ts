@@ -14,6 +14,7 @@ export class UMeshComponent extends USceneComponent {
   public isGizmo: boolean = false; // Phase 17.9.7: Flag for X-Ray rendering
   public material: UMaterial | null = null;
   public materialPath: string | null = null;
+  public geometryType: string = 'none';
 
   constructor(owner: AActor, name: string = 'MeshComponent') {
     super(owner, name);
@@ -31,6 +32,7 @@ export class UMeshComponent extends USceneComponent {
    * [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
    */
   public createBox(device: GPUDevice): void {
+    this.geometryType = 'box';
     this.topology = 'triangle-list';
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
@@ -117,7 +119,8 @@ export class UMeshComponent extends USceneComponent {
     const data = super.serialize();
     return {
       ...data,
-      materialPath: this.materialPath
+      materialPath: this.materialPath,
+      geometryType: this.geometryType
     };
   }
 
@@ -128,8 +131,9 @@ export class UMeshComponent extends USceneComponent {
     await super.deserialize(data);
     if (data.materialPath) {
       this.materialPath = data.materialPath;
-      // We don't load here because we need the device, 
-      // which is usually handled by the ProjectSystem or Renderer.
+    }
+    if (data.geometryType) {
+      this.geometryType = data.geometryType;
     }
   }
 
@@ -138,6 +142,7 @@ export class UMeshComponent extends USceneComponent {
    * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
    */
   public createPlane(device: GPUDevice, size: number = 1.0, segments: number = 10): void {
+    this.geometryType = 'plane';
     this.topology = 'triangle-list';
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
@@ -202,6 +207,7 @@ export class UMeshComponent extends USceneComponent {
    * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
    */
   public createCylinder(device: GPUDevice, radius: number = 1.0, height: number = 2.0, segments: number = 32): void {
+    this.geometryType = 'cylinder';
     this.topology = 'triangle-list';
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
@@ -320,6 +326,7 @@ export class UMeshComponent extends USceneComponent {
    * 12 floats per vertex: [x, y, z, nx, ny, nz, u, v, tx, ty, tz, tw]
    */
   public createCapsule(device: GPUDevice, radius: number = 0.5, height: number = 2.0, radialSegments: number = 32, heightSegments: number = 16): void {
+    this.geometryType = 'capsule';
     this.topology = 'triangle-list';
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
@@ -882,6 +889,7 @@ export class UMeshComponent extends USceneComponent {
    * Generates a smooth UV sphere.
    */
   public createSphere(device: GPUDevice, radius: number = 1.0, segments: number = 32): void {
+    this.geometryType = 'sphere';
     this.vertexBuffer?.destroy();
     this.indexBuffer?.destroy();
     this.topology = 'triangle-list';

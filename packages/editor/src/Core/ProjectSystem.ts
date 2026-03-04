@@ -147,64 +147,50 @@ export class ProjectSystem {
 
       UAssetManager.getInstance().reset(handle);
 
-      // 5. Load Scene Data if engine is provided
-      if (engine) {
-        try {
-          const sceneFileHandle = await handle.getFileHandle('Scene.json');
-          const file = await sceneFileHandle.getFile();
-          const text = await file.text();
-          if (text.trim()) {
-            const sceneData = JSON.parse(text);
-            if (engine.getWorld()) {
-              await engine.getWorld().deserialize(sceneData);
-            }
-          }
-        } catch (e) {
-          EditorLogger.warn('Scene.json not found or failed to parse, starting with empty scene.');
-        }
-      }
-
+      // Emitimos que se cargó el proyecto ANTES de instanciar los actores
       EventBus.dispatch('PROJECT_LOADED', { handle: handle });
       EventBus.emit('RequestContentBrowserRefresh', {});
 
-      // Load scene data
-      try {
-        const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: false });
-        const file = await sceneFileHandle.getFile();
-        const text = await file.text();
-        const sceneData = JSON.parse(text);
+      // ÚNICO BLOQUE DE CARGA DE ESCENA (El optimizado)
+      if (engine) {
+        try {
+          const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: false });
+          const file = await sceneFileHandle.getFile();
+          const text = await file.text();
+          const sceneData = JSON.parse(text);
 
-        const world = engine.getWorld();
-        const device = engine.getRenderer().getDevice();
+          const world = engine.getWorld();
+          const device = engine.getRenderer().getDevice();
 
-        await world.deserialize(sceneData);
+          await world.deserialize(sceneData);
 
-        // OPTIMIZACIÓN: Crear un array de Promesas para procesar a todos los actores a la vez
-        const loadPromises = world.actors.map(async (actor: any) => {
-          const meshComp = actor.getComponent(UMeshComponent);
-          if (meshComp) {
-            // Reconstrucción de geometría (Temporalmente dependiente del nombre)
-            if (actor.name.startsWith('Cube')) meshComp.createBox(device);
-            else if (actor.name.startsWith('Sphere')) meshComp.createSphere(device, 1.0, 32);
-            else if (actor.name.startsWith('Plane')) meshComp.createPlane(device, 2.0, 10);
-            else if (actor.name.startsWith('Cylinder')) meshComp.createCylinder(device, 1.0, 2.0, 32);
-            else if (actor.name.startsWith('Capsule')) meshComp.createCapsule(device, 0.5, 2.0, 32, 16);
+          // OPTIMIZACIÓN: Crear un array de Promesas para procesar a todos los actores a la vez
+          const loadPromises = world.actors.map(async (actor: any) => {
+            const meshComp = actor.getComponent(UMeshComponent);
+            if (meshComp) {
+              // Usamos geometryType en lugar del nombre del actor
+              if (meshComp.geometryType === 'box') meshComp.createBox(device);
+              else if (meshComp.geometryType === 'sphere') meshComp.createSphere(device, 1.0, 32);
+              else if (meshComp.geometryType === 'plane') meshComp.createPlane(device, 2.0, 10);
+              else if (meshComp.geometryType === 'cylinder') meshComp.createCylinder(device, 1.0, 2.0, 32);
+              else if (meshComp.geometryType === 'capsule') meshComp.createCapsule(device, 0.5, 2.0, 32, 16);
 
-            // Carga de material asíncrona no bloqueante
-            if (meshComp.materialPath) {
-              const material = await UAssetManager.getInstance().loadMaterial(meshComp.materialPath, device);
-              if (material) meshComp.material = material;
-            } else if (meshComp.material && typeof meshComp.material.updateResources === 'function') {
-              await meshComp.material.updateResources(device, UAssetManager.getInstance());
+              // Carga de material asíncrona no bloqueante
+              if (meshComp.materialPath) {
+                const material = await UAssetManager.getInstance().loadMaterial(meshComp.materialPath, device);
+                if (material) meshComp.material = material;
+              } else if (meshComp.material && typeof meshComp.material.updateResources === 'function') {
+                await meshComp.material.updateResources(device, UAssetManager.getInstance());
+              }
             }
-          }
-        });
+          });
 
-        // Ejecutar toda la carga en paralelo (Aceleración masiva de arranque)
-        await Promise.all(loadPromises);
+          // Ejecutar toda la carga en paralelo (Aceleración masiva de arranque)
+          await Promise.all(loadPromises);
 
-      } catch (e) {
-        EditorLogger.warn('No Scene.json found or failed to load scene data.');
+        } catch (e) {
+          EditorLogger.warn('No Scene.json found or failed to load scene data.');
+        }
       }
 
       EditorLogger.info(`Project loaded: ${this.projectName}`);

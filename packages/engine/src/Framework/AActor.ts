@@ -115,6 +115,16 @@ export class AActor extends UObject {
           assetPath: meshComp.material?.assetPath,
           baseColor: meshComp.material ? Array.from(meshComp.material.baseColor) : null
         };
+        data.materialPath = meshComp.materialPath;
+        data.geometryType = meshComp.geometryType || 'none'; // <-- NUEVO: Guardamos la forma
+      }
+
+      // Special case for Directional Light persistence (Phase 52.1)
+      if (comp.constructor.name === 'UDirectionalLightComponent') {
+        const lightComp = comp as any;
+        data.intensity = lightComp.intensity !== undefined ? lightComp.intensity : 5.0;
+        data.color = lightComp.color ? Array.from(lightComp.color) : [1, 1, 1, 1];
+        data.castShadows = lightComp.castShadows !== undefined ? lightComp.castShadows : true;
       }
 
       return data;
