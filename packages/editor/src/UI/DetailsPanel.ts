@@ -10,6 +10,7 @@ export class DetailsPanel extends HTMLElement {
   private currentMode: 'actor' | 'asset' = 'actor';
   private selectedAssetName: string | null = null;
   private selectedAssetData: any = null;
+  private previewer: any = null;
 
   constructor() {
     super();
@@ -29,6 +30,10 @@ export class DetailsPanel extends HTMLElement {
     EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
     EventBus.off('OnAssetSelected', this.handleAssetSelected);
     EventBus.off('EngineTick', this.handleTick);
+    if (this.previewer) {
+      this.previewer.destroy();
+      this.previewer = null;
+    }
   }
 
   private handleActorSelected = (actor: any) => {
@@ -131,6 +136,10 @@ export class DetailsPanel extends HTMLElement {
   private render() {
     // 1. Clear contents
     this.innerHTML = '';
+    if (this.previewer) { // Destroy existing previewer if switching modes
+      this.previewer.destroy();
+      this.previewer = null;
+    }
 
     // 2. Fallback if no selection
     if (!this.currentActor && !this.selectedAssetName) {
@@ -534,10 +543,49 @@ export class DetailsPanel extends HTMLElement {
     const header = document.createElement('div');
     header.style.marginBottom = '20px';
     header.innerHTML = `
-      <div style="font-size: 10px; color: var(--accent-color); font-weight: bold; text-transform: uppercase; margin-bottom: 4px;">Material Asset</div>
+      <div style="font-size: 10px; font-weight: bold; margin-bottom: 5px; opacity: 0.6;">MATERIAL ASSET</div>
       <div style="font-size: 16px; font-weight: bold;">${fileName}</div>
     `;
     container.appendChild(header);
+
+    // 3D Preview (Phase 57.1)
+    const previewContainer = document.createElement('div');
+    previewContainer.style.width = '100%';
+    previewContainer.style.height = '200px';
+    previewContainer.style.marginBottom = '20px';
+    previewContainer.style.backgroundColor = '#111';
+    previewContainer.style.borderRadius = '8px';
+    previewContainer.style.overflow = 'hidden';
+    previewContainer.style.display = 'flex';
+    previewContainer.style.justifyContent = 'center';
+    previewContainer.style.alignItems = 'center';
+    previewContainer.style.boxShadow = 'inset 0 4px 10px rgba(0,0,0,0.5)';
+    previewContainer.style.border = '1px solid var(--border-color)';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    previewContainer.appendChild(canvas);
+    container.appendChild(previewContainer);
+
+    // Inicializar visor 3D en vivo (Phase 57.1)
+    import('@game-creator/engine').then(async ({ Engine, MaterialPreviewer, UAssetManager }) => {
+      const device = Engine.getInstance().getRenderer().getDevice();
+      if (device) {
+        this.previewer = new MaterialPreviewer(canvas, device);
+
+        const matPath = `Materials/${fileName}`;
+        let mat = UAssetManager.getInstance().getMaterial(matPath);
+        if (!mat) {
+          // Si no está cargado, forzamos actualización de caché
+          await UAssetManager.getInstance().applyMaterialDataToCache(matPath, data, device);
+          mat = UAssetManager.getInstance().getMaterial(matPath);
+        }
+        if (mat) this.previewer.render(mat);
+      }
+    });
 
     // Controls
     const controls = document.createElement('div');
@@ -619,6 +667,11 @@ export class DetailsPanel extends HTMLElement {
       const device = Engine.getInstance().getRenderer().getDevice();
       if (device) {
         await UAssetManager.getInstance().applyMaterialDataToCache(`Materials/${fileName}`, data, device);
+        // Live update 3D previewer (Phase 57.1)
+        if (this.previewer) {
+          const mat = UAssetManager.getInstance().getMaterial(`Materials/${fileName}`);
+          if (mat) this.previewer.render(mat);
+        }
       }
     };
 

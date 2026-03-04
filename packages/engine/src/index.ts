@@ -8,6 +8,7 @@ export * from './Core/Engine';
 export * from './Core/Resources/UAssetManager';
 export * from './Rendering/Renderer';
 export * from './Rendering/UMaterial';
+export * from './Rendering/MaterialPreviewer';
 
 export * from './Framework/UActorComponent';
 export * from './Framework/USceneComponent';

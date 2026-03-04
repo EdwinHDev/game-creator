@@ -151,6 +151,13 @@ export class UAssetManager {
   }
 
   /**
+   * Synchronously retrieves a material from the cache if it exists. (Phase 57.1)
+   */
+  public getMaterial(relativePath: string): UMaterial | null {
+    return this.materialCache.get(relativePath) || null;
+  }
+
+  /**
    * Updates a material currently in memory. This allows all actors using this material
    * to be updated instantly in the viewport.
    */
