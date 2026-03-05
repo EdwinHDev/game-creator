@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UMeshComponent, UDirectionalLightComponent, vec3, EventBus } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UDirectionalLightComponent, vec3, EventBus, UAssetManager } from '@game-creator/engine';
 import { EditorLogger } from './Core/EditorLogger';
 import { ProjectSystem } from './Core/ProjectSystem';
 import './UI/TopBar';
@@ -18,6 +18,7 @@ async function initEngine() {
     const canvas = viewport.getCanvas();
     const engine = new Engine();
     await engine.initialize(canvas);
+    await UAssetManager.initialize(engine.getRenderer().getDevice()!);
 
     // --- Phase 7: Test Scene Setup ---
     const world = Engine.getInstance().getActiveWorld()!;
@@ -29,12 +30,6 @@ async function initEngine() {
     cameraActor.rootComponent = camera;
     vec3.set(camera.relativeLocation, 0, 4, 12); // Standard isometric perspective (Phase 13.1)
 
-    // --- Phase 12-13: Editor Grid ---
-    const gridActor = world.spawnActor(AActor, 'EditorGrid', true);
-    const gridMesh = gridActor.addComponent(UMeshComponent);
-    gridActor.rootComponent = gridMesh;
-    gridMesh.createGrid(engine.getRenderer().getDevice()!);
-    // -----------------------------
 
     // --- Phase 10: Editor Camera Controller ---
     new EditorCameraController(canvas, cameraActor);
