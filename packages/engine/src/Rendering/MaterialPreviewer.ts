@@ -27,6 +27,9 @@ export class MaterialPreviewer {
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
 
+  private envTexture: GPUTexture | null = null;
+  private fallbackHDRTexture: GPUTexture;
+
   private materialUniformBuffer: GPUBuffer | null = null;
   private sceneUniformBuffer: GPUBuffer | null = null;
 
@@ -55,6 +58,18 @@ export class MaterialPreviewer {
       format: 'depth24plus',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
+
+    this.fallbackHDRTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba32float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackHDRTexture },
+      new Float32Array([0.1, 0.1, 0.1, 1.0]),
+      { bytesPerRow: 16 },
+      [1, 1, 1]
+    );
 
     this.defaultSampler = this.device.createSampler({
       magFilter: 'linear',
@@ -196,7 +211,8 @@ export class MaterialPreviewer {
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }
       ]
     });
 
@@ -235,6 +251,11 @@ export class MaterialPreviewer {
       this.isRendering = true;
       this.renderLoop();
     }
+  }
+
+  public async loadEnvironment() {
+    const { UAssetManager } = await import('../Core/Resources/UAssetManager');
+    this.envTexture = await UAssetManager.getInstance().loadHDRTexture('Environments/pretoria_gardens_1k.hdr', this.device);
   }
 
   private renderLoop = () => {
@@ -311,6 +332,7 @@ export class MaterialPreviewer {
         { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
         { binding: 1, resource: this.dummyShadowTexture.createView() },
         { binding: 2, resource: this.shadowSampler },
+        { binding: 3, resource: this.envTexture ? this.envTexture.createView() : this.fallbackHDRTexture.createView() }
       ]
     });
 
@@ -358,5 +380,6 @@ export class MaterialPreviewer {
     this.fallbackFlatNormalTexture?.destroy();
     this.dummyShadowTexture?.destroy();
     this.depthTexture?.destroy();
+    this.fallbackHDRTexture?.destroy();
   }
 }

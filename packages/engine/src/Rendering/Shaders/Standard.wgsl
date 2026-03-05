@@ -21,6 +21,7 @@ struct SceneUniforms {
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
 @group(1) @binding(2) var shadowSampler: sampler_comparison;
+@group(1) @binding(3) var envMap: texture_2d<f32>;
 
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
@@ -171,10 +172,22 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let hemiLight = mix(groundColor, skyColor, upFactor);
     
     // Phase 28: Energy Conservation Polish
-    // Ambient base reflection (Fresnel injected with sky color)
+    // Ambient base reflection (IBL)
     let R = reflect(-V, N);
     let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
-    let ambientReflection = F_ambient * skyColor * 0.5; // Scaled down for fake IBL
+
+    // Equirectangular Projection
+    let invAtan = vec2<f32>(0.1591, 0.3183);
+    var uvEnv = vec2<f32>(atan2(R.z, R.x), asin(R.y));
+    uvEnv = uvEnv * invAtan + 0.5;
+
+    let envDims = textureDimensions(envMap);
+    let texelX = clamp(i32(uvEnv.x * f32(envDims.x)), 0, i32(envDims.x) - 1);
+    let texelY = clamp(i32((1.0 - uvEnv.y) * f32(envDims.y)), 0, i32(envDims.y) - 1);
+
+    let hdrColor = textureLoad(envMap, vec2<i32>(texelX, texelY), 0).rgb;
+
+    let ambientReflection = F_ambient * hdrColor;
 
     // The core ambient illumination (Metals have 0 diffuse ambient)
     let ambientDiffuse = hemiLight * diffuseColor * (1.0 - uniforms.metallic);

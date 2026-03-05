@@ -575,6 +575,7 @@ export class DetailsPanel extends HTMLElement {
       const device = Engine.getInstance().getRenderer().getDevice();
       if (device) {
         this.previewer = new MaterialPreviewer(canvas, device);
+        this.previewer.loadEnvironment(); // Phase 58.2
 
         const matPath = `Materials/${fileName}`;
         let mat = UAssetManager.getInstance().getMaterial(matPath);

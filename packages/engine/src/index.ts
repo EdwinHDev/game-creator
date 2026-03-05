@@ -6,6 +6,7 @@ export * from './Core/EventBus';
 export * from './Core/UObject';
 export * from './Core/Engine';
 export * from './Core/Resources/UAssetManager';
+export * from './Core/Resources/RGBELoader';
 export * from './Rendering/Renderer';
 export * from './Rendering/UMaterial';
 export * from './Rendering/MaterialPreviewer';

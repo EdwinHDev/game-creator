@@ -1,5 +1,6 @@
 import { Logger } from '../Logger';
 import { UMaterial } from '../../Rendering/UMaterial';
+import { RGBELoader } from './RGBELoader';
 
 /**
  * Centralized Asset Manager for Game Engine resources.
@@ -13,6 +14,9 @@ export class UAssetManager {
 
   // VRAM Cache: relativePath -> GPUTexture
   private textureCache: Map<string, GPUTexture> = new Map();
+
+  // HDRI Cache (rgba32float)
+  private hdrCache: Map<string, GPUTexture> = new Map();
 
   // Material Cache: relativePath -> UMaterial
   private materialCache: Map<string, UMaterial> = new Map();
@@ -91,6 +95,56 @@ export class UAssetManager {
     } catch (e) {
       Logger.error(`UAssetManager: Failed to load asset: ${relativePath}`, e);
       return this.fallbackWhiteTexture;
+    }
+  }
+
+  /**
+   * Loads or retrieves a cached HDR texture (rgba32float) for environment maps. (Phase 58.2)
+   */
+  public async loadHDRTexture(relativePath: string, device: GPUDevice): Promise<GPUTexture | null> {
+    if (this.hdrCache.has(relativePath)) return this.hdrCache.get(relativePath)!;
+    if (!this.currentProjectDirectory) {
+      Logger.warn(`UAssetManager: No project directory mounted. Cannot load HDR ${relativePath}`);
+      return null;
+    }
+
+    try {
+      const assetsDir = await this.currentProjectDirectory.getDirectoryHandle('Assets');
+      const parts = relativePath.split(/[/\\]/);
+      let currentDir = assetsDir;
+
+      for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        if (part === '.' || part === '') continue;
+        currentDir = await currentDir.getDirectoryHandle(part);
+      }
+
+      const fileName = parts[parts.length - 1];
+      const fileHandle = await currentDir.getFileHandle(fileName);
+      const file = await fileHandle.getFile();
+      const buffer = await file.arrayBuffer();
+
+      const hdrData = RGBELoader.parse(buffer);
+
+      const texture = device.createTexture({
+        size: [hdrData.width, hdrData.height, 1],
+        format: 'rgba32float', // Strict format for HDR data
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+
+      device.queue.writeTexture(
+        { texture },
+        hdrData.data,
+        { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
+        [hdrData.width, hdrData.height, 1]
+      );
+
+      this.hdrCache.set(relativePath, texture);
+      Logger.info(`UAssetManager: Loaded HDR environment: ${relativePath}`);
+      return texture;
+    } catch (e) {
+      Logger.error(`UAssetManager: Failed to load HDR: ${relativePath}`, e);
+      return null;
     }
   }
 
