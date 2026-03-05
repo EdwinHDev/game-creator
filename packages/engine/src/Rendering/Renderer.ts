@@ -4,6 +4,7 @@ import { World } from '../Framework/World';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { UMeshComponent } from '../Components/UMeshComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
+import { USkyLightComponent } from '../Components/USkyLightComponent';
 import { UAssetManager } from '../Core/Resources/UAssetManager';
 
 // Shader Imports (Vite ?raw)
@@ -25,6 +26,7 @@ interface FrameData {
   mainCamera: UCameraComponent;
   aspectRatio: number;
   directionalLight: UDirectionalLightComponent | null;
+  skyLight: USkyLightComponent | null;
   textureView: GPUTextureView;
   world: World;
   targetWidth: number;   // <--- NUEVO
@@ -343,13 +345,23 @@ export class Renderer {
     mat4.copy(this.viewProjMatrix, viewProjMatrix);
 
     let directionalLight: UDirectionalLightComponent | null = null;
+    let skyLight: USkyLightComponent | null = null;
+
     for (const actor of world.actors) {
-      directionalLight = actor.getComponent(UDirectionalLightComponent);
-      if (directionalLight) break;
+      if (!directionalLight) directionalLight = actor.getComponent(UDirectionalLightComponent);
+      if (!skyLight) skyLight = actor.getComponent(USkyLightComponent);
+      if (directionalLight && skyLight) break;
     }
 
-    const lightDir = directionalLight ? directionalLight.getForwardVector() : vec3.fromValues(-0.5, -1, -0.5);
-    const lightColor = directionalLight ? directionalLight.color : new Float32Array([1, 1, 1]);
+    // Extraction of direction from WorldMatrix (assuming Sun Actor root component defines it)
+    let lightDir = vec3.fromValues(-0.5, -1, -0.5);
+    if (directionalLight && directionalLight.owner.rootComponent) {
+      const worldMat = directionalLight.owner.rootComponent.getWorldMatrix();
+      lightDir = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]); // Extract forward (-Z)
+      vec3.normalize(lightDir, lightDir);
+    }
+
+    const lightColor = directionalLight ? new Float32Array(directionalLight.color) : new Float32Array([1, 1, 1]);
     const lightIntensity = directionalLight ? directionalLight.intensity : 1.0;
 
     const lightViewProj = mat4.create();
@@ -367,7 +379,11 @@ export class Renderer {
 
     const sceneData = new Float32Array(48); // Expanded (Phase 28) for 192-byte alignment (invViewProj)
     sceneData.set([...lightDir, 0], 0);
-    sceneData.set([...lightColor.map(c => c * lightIntensity), 1], 4);
+
+    // Multiplicamos intensidad por color (Fase 2 Lighting Architecture)
+    const finalLightColor = lightColor.map(c => c * lightIntensity);
+    sceneData.set([...finalLightColor, 1], 4);
+
     sceneData.set(lightViewProj as any, 8);
     const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
     sceneData.set([...camPos, 1.0], 24);
@@ -378,6 +394,18 @@ export class Renderer {
 
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
+    // Update scene bind group to use SkyLight HDRI if available
+    const hdrView = (skyLight && skyLight.envView) ? skyLight.envView : this.fallbackHDRTexture!.createView();
+    this.sceneBindGroup = this.device.createBindGroup({
+      layout: this.trianglePipeline!.getBindGroupLayout(1),
+      entries: [
+        { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
+        { binding: 1, resource: this.shadowView! },
+        { binding: 2, resource: this.shadowSampler! },
+        { binding: 3, resource: hdrView }
+      ],
+    });
+
     return {
       commandEncoder: this.device.createCommandEncoder(),
       viewProjMatrix,
@@ -385,10 +413,11 @@ export class Renderer {
       mainCamera,
       aspectRatio,
       directionalLight,
-      textureView, // <--- Ahora usa el destino calculado
+      skyLight,
+      textureView,
       world,
-      targetWidth: width,   // <--- Nueva propiedad
-      targetHeight: height  // <--- Nueva propiedad
+      targetWidth: width,
+      targetHeight: height
     };
   }
 
