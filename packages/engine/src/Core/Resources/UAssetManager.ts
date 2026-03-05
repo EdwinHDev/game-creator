@@ -109,14 +109,15 @@ export class UAssetManager {
     }
 
     try {
-      const assetsDir = await this.currentProjectDirectory.getDirectoryHandle('Assets');
+      // Navigate to Assets directory, create it if missing
+      const assetsDir = await this.currentProjectDirectory.getDirectoryHandle('Assets', { create: true });
       const parts = relativePath.split(/[/\\]/);
       let currentDir = assetsDir;
 
       for (let i = 0; i < parts.length - 1; i++) {
         const part = parts[i];
         if (part === '.' || part === '') continue;
-        currentDir = await currentDir.getDirectoryHandle(part);
+        currentDir = await currentDir.getDirectoryHandle(part, { create: true });
       }
 
       const fileName = parts[parts.length - 1];
@@ -134,7 +135,7 @@ export class UAssetManager {
 
       device.queue.writeTexture(
         { texture },
-        hdrData.data,
+        hdrData.data as any,
         { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
         [hdrData.width, hdrData.height, 1]
       );
@@ -142,8 +143,12 @@ export class UAssetManager {
       this.hdrCache.set(relativePath, texture);
       Logger.info(`UAssetManager: Loaded HDR environment: ${relativePath}`);
       return texture;
-    } catch (e) {
-      Logger.error(`UAssetManager: Failed to load HDR: ${relativePath}`, e);
+    } catch (e: any) {
+      if (e.name === 'NotFoundError') {
+        Logger.warn(`UAssetManager: HDR asset not found: ${relativePath}. Reflections will use fallback color.`);
+      } else {
+        Logger.error(`UAssetManager: Failed to load HDR: ${relativePath}`, e);
+      }
       return null;
     }
   }

@@ -192,14 +192,22 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // The core ambient illumination (Metals have 0 diffuse ambient)
     let ambientDiffuse = hemiLight * diffuseColor * (1.0 - uniforms.metallic);
     
-    // Phase 32.1: 1.5x Multiplier to lift shadows globally
-    let ambient = (ambientDiffuse + ambientReflection) * 1.5;
+    // Phase 58.7: Removed 1.5x Multiplier to prevent overexposure
+    let ambient = ambientDiffuse + ambientReflection;
 
     // Phase 30.1: Removed procedural sunDisk - purely relying on Cook-Torrance directLighting.
     let color = ambient + directLighting;
 
-    // HDR / Tonemapping (simplified)
-    let finalColor = color / (color + vec3<f32>(1.0));
-    
-    return vec4<f32>(finalColor, uniforms.baseColor.a * texColor.a);
+    // --- COLOR GRADING NEUTRO ---
+    let exposure = 1.0; 
+    let exposedColor = color * exposure;
+
+    // Clamp simple: Mantiene los tonos originales del HDRI sin desaturar los brillos hacia el blanco (como hace ACES)
+    let mappedColor = clamp(exposedColor, vec3<f32>(0.0), vec3<f32>(1.0));
+
+    // Corrección Gamma estricta
+    let gamma = 2.2;
+    let gammaCorrected = pow(mappedColor, vec3<f32>(1.0 / gamma));
+
+    return vec4<f32>(gammaCorrected, uniforms.baseColor.a * texColor.a);
 }

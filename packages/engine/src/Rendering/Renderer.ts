@@ -66,6 +66,7 @@ export class Renderer {
   private shadowTexture: GPUTexture | null = null;
   private shadowView: GPUTextureView | null = null;
   private shadowSampler: GPUSampler | null = null;
+  private fallbackHDRTexture: GPUTexture | null = null;
 
   public viewProjMatrix: mat4 = mat4.create();
 
@@ -77,6 +78,57 @@ export class Renderer {
     this.context = canvas.getContext('webgpu');
     this.format = navigator.gpu.getPreferredCanvasFormat();
     this.context!.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
+
+    // --- FALLBACK TEXTURES (Phase 58.3 Fix: Create these BEFORE bind groups) ---
+    this.fallbackWhiteTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackWhiteTexture },
+      new Uint8Array([255, 255, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+    UAssetManager.getInstance().setFallbackWhiteTexture(this.fallbackWhiteTexture);
+
+    this.fallbackFlatNormalTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackFlatNormalTexture },
+      new Uint8Array([128, 128, 255, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+
+    this.fallbackGrayTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackGrayTexture },
+      new Uint8Array([128, 128, 128, 255]),
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+
+    this.fallbackHDRTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba32float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    this.device.queue.writeTexture(
+      { texture: this.fallbackHDRTexture },
+      new Float32Array([0.05, 0.05, 0.05, 1.0]) as any,
+      { bytesPerRow: 16, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+    // --------------------------------------------------------------------------
 
     const standardVertexBuffers: GPUVertexBufferLayout[] = [{
       arrayStride: 48, // Phase 34: 48 bytes (Pos[12] + Normal[12] + UV[8] + Tangent[16])
@@ -139,7 +191,8 @@ export class Renderer {
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } }
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }
       ]
     });
 
@@ -213,6 +266,7 @@ export class Renderer {
         { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
+        { binding: 3, resource: this.fallbackHDRTexture!.createView() }
       ],
     });
 
@@ -237,43 +291,6 @@ export class Renderer {
       addressModeV: 'repeat',
     });
 
-    // Material Architecture Fase 1: Fallback Textures
-    this.fallbackWhiteTexture = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.device.queue.writeTexture(
-      { texture: this.fallbackWhiteTexture },
-      new Uint8Array([255, 255, 255, 255]),
-      { bytesPerRow: 4, rowsPerImage: 1 },
-      [1, 1, 1]
-    );
-    UAssetManager.getInstance().setFallbackWhiteTexture(this.fallbackWhiteTexture);
-
-    this.fallbackFlatNormalTexture = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.device.queue.writeTexture(
-      { texture: this.fallbackFlatNormalTexture },
-      new Uint8Array([128, 128, 255, 255]),
-      { bytesPerRow: 4, rowsPerImage: 1 },
-      [1, 1, 1]
-    );
-
-    this.fallbackGrayTexture = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.device.queue.writeTexture(
-      { texture: this.fallbackGrayTexture },
-      new Uint8Array([128, 128, 128, 255]),
-      { bytesPerRow: 4, rowsPerImage: 1 },
-      [1, 1, 1]
-    );
 
     Logger.info("WebGPU Renderer Initialized (Modular).");
   }

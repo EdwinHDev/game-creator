@@ -66,7 +66,7 @@ export class MaterialPreviewer {
     });
     this.device.queue.writeTexture(
       { texture: this.fallbackHDRTexture },
-      new Float32Array([0.1, 0.1, 0.1, 1.0]),
+      new Float32Array([0.1, 0.1, 0.1, 1.0]) as any,
       { bytesPerRow: 16 },
       [1, 1, 1]
     );
@@ -254,8 +254,32 @@ export class MaterialPreviewer {
   }
 
   public async loadEnvironment() {
-    const { UAssetManager } = await import('../Core/Resources/UAssetManager');
-    this.envTexture = await UAssetManager.getInstance().loadHDRTexture('Environments/pretoria_gardens_1k.hdr', this.device);
+    try {
+      // Fetch from Vite dev server (public folder)
+      const response = await fetch('/environments/pretoria_gardens_1k.hdr');
+      if (!response.ok) throw new Error("HDRI not found on web server.");
+
+      const buffer = await response.arrayBuffer();
+
+      const { RGBELoader } = await import('../Core/Resources/RGBELoader');
+      const hdrData = RGBELoader.parse(buffer);
+
+      this.envTexture = this.device.createTexture({
+        size: [hdrData.width, hdrData.height, 1],
+        format: 'rgba32float', // High Dynamic Range format
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+
+      this.device.queue.writeTexture(
+        { texture: this.envTexture },
+        hdrData.data as any,
+        { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
+        [hdrData.width, hdrData.height, 1]
+      );
+
+    } catch (e) {
+      console.error("MaterialPreviewer: Error loading internal HDRI", e);
+    }
   }
 
   private renderLoop = () => {
@@ -305,10 +329,10 @@ export class MaterialPreviewer {
     matData[37] = this.currentMaterial.metallic;
     this.device.queue.writeBuffer(this.materialUniformBuffer!, 0, matData);
 
-    // Scene Data (Stronger frontal lighting for analysis)
+    // Scene Data (Apagamos la luz falsa, el HDRI es la única fuente de luz ahora)
     const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([-0.5, -1, 1, 0], 0); // lightDirection (Front/Above)
-    sceneData.set([3, 3, 3, 1], 4);     // lightColor (Stronger)
+    sceneData.set([-0.5, -1, 1, 0], 0); // direction
+    sceneData.set([0, 0, 0, 1], 4);     // color (light turned off)
     sceneData.set(mat4.create(), 8);   // lightVP (dummy)
     sceneData.set([0, 0, 3.2, 1], 24); // cameraPosition
     sceneData.set(mat4.create(), 28);  // invVP (dummy)
