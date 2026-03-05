@@ -157,13 +157,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let hdrSpecColor = textureLoad(envMap, vec2<u32>(texelX_Spec, texelY_Spec), 0u).rgb;
 
     let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
-    let roughnessAttenuation = 1.0 - finalRoughness;
     
-    // TRUCO IBL: Si no es metálico, reducimos la fuerza del reflejo HDRI nítido 
-    // para simular la dispersión de luz de un material dieléctrico.
-    let specIntensity = mix(0.1, 1.0, uniforms.metallic); 
+    // Factor de atenuación: Los metales reflejan el 100% del HDRI, 
+    // los no-metales (madera/plástico) solo una fracción muy pequeña y difusa.
+    let iblReduction = mix(0.15, 1.0, uniforms.metallic); 
 
-    let ambientReflection = F_ambient * hdrSpecColor * roughnessAttenuation * specIntensity;
+    // Suavizado por rugosidad
+    let roughnessFree = 1.0 - finalRoughness;
+
+    let ambientReflection = F_ambient * hdrSpecColor * roughnessFree * iblReduction;
 
     // B) Iluminación Difusa Ambiental (Usando vector N en el HDRI)
     var uvEnvDiff = vec2<f32>(atan2(N.z, N.x), asin(N.y));
@@ -172,8 +174,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let texelY_Diff = u32(clamp((1.0 - uvEnvDiff.y) * envDims.y, 0.0, envDims.y - 1.0));
     let hdrDiffColor = textureLoad(envMap, vec2<u32>(texelX_Diff, texelY_Diff), 0u).rgb;
 
-    // Escalar la luz ambiente a la mitad para que no asfixie la textura
-    let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic);
+    // Asegúrate de que el diffuse ambiental sea más sutil para no lavar el color
+    let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic) * 0.4;
 
     let ambient = ambientDiffuse + ambientReflection;
     let color = ambient + directLighting;
