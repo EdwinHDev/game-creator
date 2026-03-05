@@ -37,32 +37,17 @@ fn unprojectPoint(x: f32, y: f32, z: f32, invVP: mat4x4<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // 1. Calcular intersección con el plano del suelo (Y=0)
     let t = -input.nearPoint.y / (input.farPoint.y - input.nearPoint.y);
-    
-    // Descartar fragmentos por encima del horizonte o detrás de la cámara
     if (t <= 0.0) { discard; }
     
     let worldPos = input.nearPoint + t * (input.farPoint - input.nearPoint);
+    let grid = max(makeGrid(worldPos, 0.01), makeGrid(worldPos, 0.001)); // Líneas cada 1m y 10m
     
-    // 2. Generar rejilla matemática (10cm y 1m en unidades Unreal)
-    let grid10 = makeGrid(worldPos, 0.1);    // Rejilla de 10 unidades (10cm)
-    let grid100 = makeGrid(worldPos, 0.01);  // Rejilla de 100 unidades (1m)
-    let grid = max(grid10, grid100);
+    // Fading para escala UU (Centímetros)
+    // 0.0005 hará que a 5000 unidades (50m) el alpha sea casi 0
+    let fade = exp(-t * 0.0008); 
     
-    // 3. --- CALIBRACIÓN DE FADING PROFESIONAL ---
-    // Usamos una caída exponencial: fade = e^(-distancia * factor)
-    // Escala grande: visible hasta los ~50 metros (5000 unidades).
-    let fade = exp(-t * 0.0005); 
-    
-    // 4. Color y Opacidad
-    let baseColor = vec3<f32>(0.2, 0.2, 0.2); // Gris oscuro neutro
-    let finalAlpha = grid * fade * 0.5;      // 0.5 es el brillo máximo cerca
-    
-    // Evitar renderizar píxeles casi invisibles
-    if (finalAlpha < 0.01) { discard; }
-
-    return vec4<f32>(baseColor, finalAlpha);
+    return vec4<f32>(0.2, 0.2, 0.2, grid * fade * 0.5);
 }
 
 fn makeGrid(pos: vec3<f32>, scale: f32) -> f32 {

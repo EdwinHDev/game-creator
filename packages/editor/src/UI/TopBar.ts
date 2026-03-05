@@ -1,4 +1,4 @@
-import { AActor, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
+import { AActor, UDirectionalLightComponent } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
 import { vec3 } from 'gl-matrix';
@@ -49,7 +49,7 @@ export class TopBar extends HTMLElement {
       EventBus.on('RequestSaveProject', async () => {
         if (this.engine) {
           try {
-            await ProjectSystem.saveProject(this.engine.getWorld());
+            await ProjectSystem.saveProject();
             EditorLogger.info("Auto-Save completado silenciosamente.");
             this.showToast("💾 Auto-guardado completado", "info");
           } catch (e) {
@@ -403,7 +403,7 @@ export class TopBar extends HTMLElement {
     btnSave?.addEventListener('click', (e) => {
       e.preventDefault();
       if (this.engine) {
-        ProjectSystem.saveProject(this.engine.getWorld());
+        ProjectSystem.saveProject();
       }
     });
   }
@@ -433,9 +433,10 @@ export class TopBar extends HTMLElement {
     }
 
     const itemCount = actors.filter((a: any) => a.name.startsWith(`${type}_`)).length;
-    const newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
+    let newActor;
 
     if (type === 'DirectionalLight') {
+      newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
       const light = newActor.addComponent(UDirectionalLightComponent);
       newActor.rootComponent = light;
       light.intensity = 5.0;
@@ -444,16 +445,10 @@ export class TopBar extends HTMLElement {
       vec3.set(light.relativeRotation, -45, 45, 0);
       EditorLogger.info(`Spawned new Directional Light`);
     } else {
-      const mesh = newActor.addComponent(UMeshComponent);
-      newActor.rootComponent = mesh;
-      vec3.copy(mesh.relativeLocation, spawnPos);
-
-      if (type === 'Cube') mesh.createBox(device);
-      else if (type === 'Sphere') mesh.createSphere(device, 1.0, 32);
-      else if (type === 'Plane') mesh.createPlane(device, 2.0, 10);
-      else if (type === 'Cylinder') mesh.createCylinder(device, 1.0, 2.0, 32);
-      else if (type === 'Capsule') mesh.createCapsule(device, 0.5, 2.0, 32, 16);
-
+      newActor = this.engine.spawnPrimitive(type, world, `${type}_${itemCount + 1}`);
+      if (newActor.rootComponent) {
+        vec3.copy(newActor.rootComponent.relativeLocation, spawnPos);
+      }
       EditorLogger.info(`Spawned new ${type} at ${spawnPos}`);
     }
 

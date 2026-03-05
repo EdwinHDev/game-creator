@@ -4,6 +4,8 @@ import { Renderer } from '../Rendering/Renderer';
 import { World } from '../Framework/World';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { vec3, mat4 } from 'gl-matrix';
+import { AActor } from '../Framework/AActor';
+import { UMeshComponent } from '../Components/UMeshComponent';
 
 /**
  * Main application class of the engine.
@@ -150,6 +152,20 @@ export class Engine {
     } else {
       Logger.error(`[Engine] Intento de activar un mundo inexistente: ${id}`);
     }
+  }
+
+  /**
+   * Spawns a primitive actor using the AssetManager.
+   */
+  public spawnPrimitive(type: 'Cube' | 'Sphere' | 'Plane' | 'Cylinder' | 'Capsule' | 'Cone', world: World, name?: string): AActor {
+    const actorName = name || `New_${type}`;
+    const actor = world.spawnActor(AActor, actorName);
+
+    const meshComp = actor.addComponent(UMeshComponent);
+    meshComp.setPrimitive(`Primitive_${type}`);
+
+    actor.rootComponent = meshComp;
+    return actor;
   }
 
 
