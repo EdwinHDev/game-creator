@@ -47,7 +47,7 @@ export class Renderer {
 
   private skyPipeline: GPURenderPipeline | null = null;
   private trianglePipeline: GPURenderPipeline | null = null;
-  private linePipeline: GPURenderPipeline | null = null;
+  private gridPipeline: GPURenderPipeline | null = null;
   private outlinePipeline: GPURenderPipeline | null = null;
   private gizmoTriangleOverlayPipeline: GPURenderPipeline | null = null;
   private billboardPipeline: GPURenderPipeline | null = null;
@@ -218,6 +218,10 @@ export class Renderer {
       bindGroupLayouts: [materialBindGroupLayout, sceneBindGroupLayout]
     });
 
+    const gridPipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [sceneBindGroupLayout]
+    });
+
     this.trianglePipeline = this.device.createRenderPipeline({
       layout: pipelineLayout,
       vertex: { module: standardModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
@@ -226,9 +230,9 @@ export class Renderer {
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
-    this.linePipeline = this.device.createRenderPipeline({
-      layout: 'auto',
-      vertex: { module: gridModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
+    this.gridPipeline = this.device.createRenderPipeline({
+      layout: gridPipelineLayout,
+      vertex: { module: gridModule, entryPoint: 'vs_main', buffers: [] },
       fragment: {
         module: gridModule, entryPoint: 'fs_main',
         targets: [{
@@ -589,7 +593,7 @@ export class Renderer {
   }
 
   private executeGridPass(frameData: FrameData): void {
-    if (!this.linePipeline || !this.sceneBindGroup) return;
+    if (!this.gridPipeline || !this.sceneBindGroup) return;
     const { commandEncoder, textureView } = frameData;
 
     const pass = commandEncoder.beginRenderPass({
@@ -605,9 +609,9 @@ export class Renderer {
       },
     });
 
-    pass.setPipeline(this.linePipeline);
-    // Use skyBindGroup which ONLY has binding 0 (common for Sky and Grid)
-    pass.setBindGroup(0, this.skyBindGroup);
+    pass.setPipeline(this.gridPipeline);
+    // Group 0: Camera and Global Data (Same as main pass but at index 0 for this pipeline)
+    pass.setBindGroup(0, this.sceneBindGroup!);
     pass.draw(6); // Full-screen quad (2 triangles)
     pass.end();
   }
