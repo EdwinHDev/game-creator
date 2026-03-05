@@ -7,6 +7,15 @@ import { UAsset } from './UAsset';
  * Centralized Asset Manager for Game Engine resources.
  * Handles GPU Texture caching (VRAM), Primitives, and relative path resolution.
  */
+export enum EPrimitiveType {
+  BOX = 'Primitive_Box',
+  SPHERE = 'Primitive_Sphere',
+  PLANE = 'Primitive_Plane',
+  CYLINDER = 'Primitive_Cylinder',
+  CONE = 'Primitive_Cone',
+  CAPSULE = 'Primitive_Capsule'
+}
+
 export class UAssetManager {
   private static instance: UAssetManager;
 
@@ -41,7 +50,7 @@ export class UAssetManager {
   /**
    * Initializes basic primitives (Box, Plane, Sphere, Cylinder, Cone, Capsule) and registers them in the asset cache.
    */
-  public static async initialize(device: GPUDevice) {
+  public static async init(device: GPUDevice) {
     const instance = this.getInstance();
     instance.createBoxPrimitive(device);
     instance.createPlanePrimitive(device);
@@ -49,7 +58,7 @@ export class UAssetManager {
     instance.createCylinderPrimitive(device);
     instance.createConePrimitive(device);
     instance.createCapsulePrimitive(device);
-    Logger.info("[UAssetManager] Set de 6 primitivos inicializado con éxito.");
+    Logger.info("[UAssetManager] Todos los primitivos inicializados en GPU.");
   }
 
   private createSpherePrimitive(device: GPUDevice) {
@@ -93,7 +102,7 @@ export class UAssetManager {
       }
     }
 
-    this.assets.set('Primitive_Sphere', new UAsset('Primitive_Sphere', device, new Float32Array(vertices), new Uint32Array(indices)));
+    this.assets.set(EPrimitiveType.SPHERE, new UAsset(EPrimitiveType.SPHERE, device, new Float32Array(vertices), new Uint32Array(indices)));
   }
 
   private createCylinderPrimitive(device: GPUDevice) {
@@ -151,7 +160,7 @@ export class UAssetManager {
       indices.push(topCenterIndex, topRingStart + i, topRingStart + i + 1);
     }
 
-    this.assets.set('Primitive_Cylinder', new UAsset('Primitive_Cylinder', device, new Float32Array(vertices), new Uint32Array(indices)));
+    this.assets.set(EPrimitiveType.CYLINDER, new UAsset(EPrimitiveType.CYLINDER, device, new Float32Array(vertices), new Uint32Array(indices)));
   }
 
   private createConePrimitive(device: GPUDevice) {
@@ -199,7 +208,7 @@ export class UAssetManager {
       indices.push(centerIndex, ringStart + i + 1, ringStart + i);
     }
 
-    this.assets.set('Primitive_Cone', new UAsset('Primitive_Cone', device, new Float32Array(vertices), new Uint32Array(indices)));
+    this.assets.set(EPrimitiveType.CONE, new UAsset(EPrimitiveType.CONE, device, new Float32Array(vertices), new Uint32Array(indices)));
   }
 
   private createCapsulePrimitive(device: GPUDevice) {
@@ -248,7 +257,7 @@ export class UAssetManager {
       }
     }
 
-    this.assets.set('Primitive_Capsule', new UAsset('Primitive_Capsule', device, new Float32Array(vertices), new Uint32Array(indices)));
+    this.assets.set(EPrimitiveType.CAPSULE, new UAsset(EPrimitiveType.CAPSULE, device, new Float32Array(vertices), new Uint32Array(indices)));
   }
 
   private createBoxPrimitive(device: GPUDevice) {
@@ -296,7 +305,7 @@ export class UAssetManager {
       20, 21, 22, 20, 22, 23, // Left
     ]);
 
-    this.assets.set('Primitive_Cube', new UAsset('Primitive_Cube', device, vertices, indices));
+    this.assets.set(EPrimitiveType.BOX, new UAsset(EPrimitiveType.BOX, device, vertices, indices));
   }
 
   private createPlanePrimitive(device: GPUDevice) {
@@ -309,7 +318,7 @@ export class UAssetManager {
       -50.0, 0, 50.0, 0, 1, 0, 0, 1, 1, 0, 0, 1
     ]);
     const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
-    this.assets.set('Primitive_Plane', new UAsset('Primitive_Plane', device, vertices, indices));
+    this.assets.set(EPrimitiveType.PLANE, new UAsset(EPrimitiveType.PLANE, device, vertices, indices));
   }
 
   /**

@@ -3,7 +3,7 @@ import './UI/AppShell';
 import './UI/Outliner';
 import './UI/DetailsPanel';
 import { EditorCameraController } from './UI/EditorCameraController';
-import { Engine, AActor, UCameraComponent, UDirectionalLightComponent, vec3, EventBus, UAssetManager } from '@game-creator/engine';
+import { Engine, AActor, UCameraComponent, UDirectionalLightComponent, vec3, EventBus } from '@game-creator/engine';
 import { EditorLogger } from './Core/EditorLogger';
 import { ProjectSystem } from './Core/ProjectSystem';
 import './UI/TopBar';
@@ -18,7 +18,7 @@ async function initEngine() {
     const canvas = viewport.getCanvas();
     const engine = new Engine();
     await engine.initialize(canvas);
-    await UAssetManager.initialize(engine.getRenderer().getDevice()!);
+    EditorLogger.info("Motor y Assets listos.");
 
     // --- Phase 7: Test Scene Setup ---
     const world = Engine.getInstance().getActiveWorld()!;
@@ -41,6 +41,62 @@ async function initEngine() {
       topbar.engine = engine;
       topbar.render(); // Re-render now that it has the engine
     }
+
+    // --- Content Browser Mock ---
+    const assetManager = (window as any).UAssetManager || (await import('@game-creator/engine')).UAssetManager;
+    const assetList = assetManager.getInstance().getAssetDataList();
+
+    const panel = document.createElement('div');
+    panel.style.position = 'absolute';
+    panel.style.bottom = '10px';
+    panel.style.left = '50%';
+    panel.style.transform = 'translateX(-50%)';
+    panel.style.display = 'flex';
+    panel.style.gap = '8px';
+    panel.style.padding = '8px';
+    panel.style.background = 'rgba(20,20,20,0.8)';
+    panel.style.borderRadius = '8px';
+    panel.style.zIndex = '9999';
+
+    assetList.forEach((a: any) => {
+      if (a.type === 'StaticMesh') {
+        const btn = document.createElement('button');
+        btn.textContent = `Spawn ${a.name.replace('Primitive_', '')}`;
+        btn.style.padding = '5px 10px';
+        btn.style.cursor = 'pointer';
+        btn.onclick = () => {
+          const newActor = engine.spawnActorByAssetId(a.name);
+          if (newActor) {
+            EventBus.dispatch('OnActorSelected', newActor);
+            EventBus.emit('OnWorldChanged', {});
+          }
+        };
+        panel.appendChild(btn);
+      }
+    });
+
+    // Add Light Button temporarily here since we deleted it from TopBar
+    const lightBtn = document.createElement('button');
+    lightBtn.textContent = 'Spawn DL';
+    lightBtn.style.padding = '5px 10px';
+    lightBtn.style.cursor = 'pointer';
+    lightBtn.onclick = () => {
+      const world = engine.getActiveWorld()!;
+      const itemCount = world.actors.filter((a: any) => a.name.startsWith(`DirectionalLight_`)).length;
+      const newActor = world.spawnActor(AActor, `DirectionalLight_${itemCount + 1}`);
+      const light = newActor.addComponent(UDirectionalLightComponent);
+      newActor.rootComponent = light;
+      light.intensity = 5.0;
+      light.castShadows = true;
+      vec3.set(light.relativeLocation, 10, 20, 10);
+      vec3.set(light.relativeRotation, -45, 45, 0);
+      EventBus.dispatch('OnActorSelected', newActor);
+      EventBus.emit('OnWorldChanged', {});
+    };
+    panel.appendChild(lightBtn);
+
+    document.body.appendChild(panel);
+    // ----------------------------
 
     // Handle project open requests from UI
     EventBus.on('RequestProjectOpen', () => {

@@ -2,6 +2,7 @@ import { AActor } from '../AActor';
 import { UMeshComponent } from '../../Components/UMeshComponent';
 import { USceneComponent } from '../USceneComponent';
 import { vec3, quat, mat4 } from 'gl-matrix';
+import { UAssetManager, EPrimitiveType } from '../../Core/Resources/UAssetManager';
 
 export class AGizmoActor extends AActor {
   private xAxisStem: UMeshComponent;
@@ -20,7 +21,7 @@ export class AGizmoActor extends AActor {
 
     // --- Axis X (Red) ---
     this.xAxisStem = this.addComponent(UMeshComponent, 'X_Stem');
-    this.xAxisStem.setPrimitive('Primitive_Cylinder');
+    this.xAxisStem.setAsset(UAssetManager.getAsset(EPrimitiveType.CYLINDER));
     this.xAxisStem.isGizmo = true;
     this.xAxisStem.pickingId = 1;
     this.xAxisStem.relativeScale = stemScale;
@@ -28,7 +29,7 @@ export class AGizmoActor extends AActor {
     this.xAxisStem.relativeLocation = vec3.fromValues(0.5, 0, 0);
 
     this.xAxisTip = this.addComponent(UMeshComponent, 'X_Tip');
-    this.xAxisTip.setPrimitive('Primitive_Cone');
+    this.xAxisTip.setAsset(UAssetManager.getAsset(EPrimitiveType.CONE));
     this.xAxisTip.isGizmo = true;
     this.xAxisTip.pickingId = 1;
     this.xAxisTip.relativeScale = tipScale;
@@ -37,14 +38,14 @@ export class AGizmoActor extends AActor {
 
     // --- Axis Y (Green) ---
     this.yAxisStem = this.addComponent(UMeshComponent, 'Y_Stem');
-    this.yAxisStem.setPrimitive('Primitive_Cylinder');
+    this.yAxisStem.setAsset(UAssetManager.getAsset(EPrimitiveType.CYLINDER));
     this.yAxisStem.isGizmo = true;
     this.yAxisStem.pickingId = 2;
     this.yAxisStem.relativeScale = stemScale;
     this.yAxisStem.relativeLocation = vec3.fromValues(0, 0.5, 0);
 
     this.yAxisTip = this.addComponent(UMeshComponent, 'Y_Tip');
-    this.yAxisTip.setPrimitive('Primitive_Cone');
+    this.yAxisTip.setAsset(UAssetManager.getAsset(EPrimitiveType.CONE));
     this.yAxisTip.isGizmo = true;
     this.yAxisTip.pickingId = 2;
     this.yAxisTip.relativeScale = tipScale;
@@ -52,7 +53,7 @@ export class AGizmoActor extends AActor {
 
     // --- Axis Z (Blue) ---
     this.zAxisStem = this.addComponent(UMeshComponent, 'Z_Stem');
-    this.zAxisStem.setPrimitive('Primitive_Cylinder');
+    this.zAxisStem.setAsset(UAssetManager.getAsset(EPrimitiveType.CYLINDER));
     this.zAxisStem.isGizmo = true;
     this.zAxisStem.pickingId = 3;
     this.zAxisStem.relativeScale = stemScale;
@@ -60,7 +61,7 @@ export class AGizmoActor extends AActor {
     this.zAxisStem.relativeLocation = vec3.fromValues(0, 0, 0.5);
 
     this.zAxisTip = this.addComponent(UMeshComponent, 'Z_Tip');
-    this.zAxisTip.setPrimitive('Primitive_Cone');
+    this.zAxisTip.setAsset(UAssetManager.getAsset(EPrimitiveType.CONE));
     this.zAxisTip.isGizmo = true;
     this.zAxisTip.pickingId = 3;
     this.zAxisTip.relativeScale = tipScale;

@@ -2,7 +2,7 @@ import { USceneComponent } from '../Framework/USceneComponent';
 import { AActor } from '../Framework/AActor';
 import { UMaterial } from '../Rendering/UMaterial';
 import { UAsset } from '../Core/Resources/UAsset';
-import { UAssetManager } from '../Core/Resources/UAssetManager';
+import { UAssetManager, EPrimitiveType } from '../Core/Resources/UAssetManager';
 import { Logger } from '../Core/Logger';
 
 /**
@@ -58,6 +58,20 @@ export class UMeshComponent extends USceneComponent {
   }
 
   /**
+   * Sets an explicit UAsset object bypassing string lookup.
+   */
+  public setAsset(asset: UAsset | undefined | null): void {
+    if (asset) {
+      this._asset = asset;
+      this.assetId = asset.id;
+      this.topology = 'triangle-list';
+    } else {
+      this._asset = null;
+      Logger.error(`[UMeshComponent] Intento nulo al setAsset`);
+    }
+  }
+
+  /**
    * Called every frame.
    */
   public override tick(deltaTime: number): void {
@@ -87,12 +101,12 @@ export class UMeshComponent extends USceneComponent {
     if (data.assetId || data.geometryType) {
       this.assetId = data.assetId || data.geometryType;
       // Convert legacy names if necessary
-      if (this.assetId === 'box') this.assetId = 'Primitive_Cube';
-      if (this.assetId === 'plane') this.assetId = 'Primitive_Plane';
-      if (this.assetId === 'sphere') this.assetId = 'Primitive_Sphere';
-      if (this.assetId === 'cylinder') this.assetId = 'Primitive_Cylinder';
-      if (this.assetId === 'cone') this.assetId = 'Primitive_Cone';
-      if (this.assetId === 'capsule') this.assetId = 'Primitive_Capsule';
+      if (this.assetId === 'box') this.assetId = EPrimitiveType.BOX;
+      if (this.assetId === 'plane') this.assetId = EPrimitiveType.PLANE;
+      if (this.assetId === 'sphere') this.assetId = EPrimitiveType.SPHERE;
+      if (this.assetId === 'cylinder') this.assetId = EPrimitiveType.CYLINDER;
+      if (this.assetId === 'cone') this.assetId = EPrimitiveType.CONE;
+      if (this.assetId === 'capsule') this.assetId = EPrimitiveType.CAPSULE;
     }
   }
 

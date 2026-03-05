@@ -5,7 +5,8 @@ import { World } from '../Framework/World';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { vec3, mat4 } from 'gl-matrix';
 import { AActor } from '../Framework/AActor';
-import { UMeshComponent } from '../Components/UMeshComponent';
+import { UAssetManager } from './Resources/UAssetManager';
+import { UActorFactory } from './Factories/UActorFactory';
 
 /**
  * Main application class of the engine.
@@ -45,6 +46,9 @@ export class Engine {
   public async initialize(canvas: HTMLCanvasElement): Promise<void> {
     this.canvas = canvas;
     await this.renderer.initialize(canvas);
+
+    // IMPORTANTE: Pasar el device del renderer al manager
+    await UAssetManager.init(this.renderer.getDevice()!);
     Logger.info("Engine attached to Canvas");
   }
 
@@ -155,17 +159,19 @@ export class Engine {
   }
 
   /**
-   * Spawns a primitive actor using the AssetManager.
+   * Integrated entry point for spawning actors tied to an asset.
    */
-  public spawnPrimitive(type: 'Cube' | 'Sphere' | 'Plane' | 'Cylinder' | 'Capsule' | 'Cone', world: World, name?: string): AActor {
-    const actorName = name || `New_${type}`;
-    const actor = world.spawnActor(AActor, actorName);
+  public spawnActorByAssetId(assetId: string): AActor | null {
+    const asset = UAssetManager.getAsset(assetId);
+    if (!asset) {
+      Logger.error(`[Engine] Asset no encontrado en Manager: ${assetId}`);
+      return null;
+    }
 
-    const meshComp = actor.addComponent(UMeshComponent);
-    meshComp.setPrimitive(`Primitive_${type}`);
+    const world = this.getActiveWorld();
+    if (!world) return null;
 
-    actor.rootComponent = meshComp;
-    return actor;
+    return UActorFactory.spawnFromAsset(asset, world);
   }
 
 

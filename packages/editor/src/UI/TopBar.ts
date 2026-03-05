@@ -1,7 +1,6 @@
-import { AActor, UDirectionalLightComponent } from '@game-creator/engine';
+import { AActor } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
-import { vec3 } from 'gl-matrix';
 
 /**
  * TopBar Web Component with tools and spawning actions.
@@ -133,30 +132,8 @@ export class TopBar extends HTMLElement {
           </div>
         </div>
 
-        <!-- Right: Primitives Menu -->
+        <!-- Right: Primitives Menu (Removed via Unreal Architecture) -->
         <div class="right-zone">
-          <div class="dropdown">
-            <button class="btn-primary" title="Primitives">
-              <svg viewBox="0 0 24 24" fill="none" class="icon" stroke="currentColor" stroke-width="2">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                <line x1="12" y1="22.08" x2="12" y2="12" />
-              </svg>
-              <svg viewBox="0 0 24 24" fill="none" class="icon icon-small" stroke="currentColor" stroke-width="3" style="margin-left:4px">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-            <div class="dropdown-content dropdown-right">
-              <button id="btn-spawn-cube" class="dropdown-button">Cube</button>
-              <button id="btn-spawn-sphere" class="dropdown-button">Sphere</button>
-              <button id="btn-spawn-plane" class="dropdown-button">Plane</button>
-              <button id="btn-spawn-cylinder" class="dropdown-button">Cylinder</button>
-              <button id="btn-spawn-capsule" class="dropdown-button">Capsule</button>
-              <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
-              <button id="btn-spawn-light" class="dropdown-button" style="color: var(--accent-color);">Directional Light</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -346,21 +323,7 @@ export class TopBar extends HTMLElement {
       }
     });
 
-    const spawnTypes = [
-      { id: 'btn-spawn-cube', type: 'Cube' },
-      { id: 'btn-spawn-sphere', type: 'Sphere' },
-      { id: 'btn-spawn-plane', type: 'Plane' },
-      { id: 'btn-spawn-cylinder', type: 'Cylinder' },
-      { id: 'btn-spawn-capsule', type: 'Capsule' },
-      { id: 'btn-spawn-light', type: 'DirectionalLight' }
-    ];
-
-    spawnTypes.forEach(spawnDef => {
-      const btn = this.querySelector(`#${spawnDef.id}`);
-      if (btn) {
-        btn.addEventListener('click', () => this.spawnPrimitive(spawnDef.type));
-      }
-    });
+    // Spawn functionality deprecated in TopBar. Moved to Content Browser.
 
     const spaceBtn = this.querySelector('#btn-toggle-space') as HTMLButtonElement;
     if (spaceBtn) {
@@ -408,55 +371,7 @@ export class TopBar extends HTMLElement {
     });
   }
 
-  private spawnPrimitive(type: string) {
-    if (!this.engine) return;
-
-    const world = this.engine.getWorld();
-    const renderer = this.engine.getRenderer();
-    const device = renderer.getDevice();
-
-    if (!device) return;
-
-    const actors = world.actors;
-    const cameraActor = actors.find((a: any) => a.name === 'MainCamera');
-
-    let spawnPos = vec3.fromValues(0, 0, 0);
-
-    if (cameraActor && cameraActor.rootComponent) {
-      const camPos = cameraActor.rootComponent.relativeLocation;
-      const camRot = cameraActor.rootComponent.relativeRotation;
-
-      const forward = vec3.fromValues(0, 0, -1);
-      vec3.transformQuat(forward, forward, camRot);
-
-      vec3.scaleAndAdd(spawnPos, camPos, forward, 5);
-    }
-
-    const itemCount = actors.filter((a: any) => a.name.startsWith(`${type}_`)).length;
-    let newActor;
-
-    if (type === 'DirectionalLight') {
-      newActor = world.spawnActor(AActor, `${type}_${itemCount + 1}`);
-      const light = newActor.addComponent(UDirectionalLightComponent);
-      newActor.rootComponent = light;
-      light.intensity = 5.0;
-      light.castShadows = true;
-      vec3.set(light.relativeLocation, 10, 20, 10);
-      vec3.set(light.relativeRotation, -45, 45, 0);
-      EditorLogger.info(`Spawned new Directional Light`);
-    } else {
-      newActor = this.engine.spawnPrimitive(type, world, `${type}_${itemCount + 1}`);
-      if (newActor.rootComponent) {
-        vec3.copy(newActor.rootComponent.relativeLocation, spawnPos);
-      }
-      EditorLogger.info(`Spawned new ${type} at ${spawnPos}`);
-    }
-
-    import('@game-creator/engine').then(({ EventBus }) => {
-      EventBus.dispatch('OnActorSelected', newActor);
-      EventBus.emit('OnWorldChanged', {});
-    });
-  }
+  // No more local spawn logic here
 
   private showToast(message: string, type: 'success' | 'info' = 'info') {
     const toast = document.createElement('div');

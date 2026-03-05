@@ -4,6 +4,7 @@ export class UAsset extends UObject {
   public vertexBuffer: GPUBuffer | null = null;
   public indexBuffer: GPUBuffer | null = null;
   public indexCount: number = 0;
+  public type: string = 'StaticMesh';
 
   constructor(
     name: string,

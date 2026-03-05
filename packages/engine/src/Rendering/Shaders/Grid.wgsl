@@ -38,14 +38,13 @@ fn unprojectPoint(x: f32, y: f32, z: f32, invVP: mat4x4<f32>) -> vec3<f32> {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let t = -input.nearPoint.y / (input.farPoint.y - input.nearPoint.y);
-    if (t <= 0.0) { discard; }
+    if (t <= 0.0 || t > 10000.0) { discard; } // Límite físico de 100 metros
     
     let worldPos = input.nearPoint + t * (input.farPoint - input.nearPoint);
-    let grid = max(makeGrid(worldPos, 0.01), makeGrid(worldPos, 0.001)); // Líneas cada 1m y 10m
+    let grid = max(makeGrid(worldPos, 0.01), makeGrid(worldPos, 0.001));
     
-    // Fading para escala UU (Centímetros)
-    // 0.0005 hará que a 5000 unidades (50m) el alpha sea casi 0
-    let fade = exp(-t * 0.0008); 
+    // Desvanecimiento agresivo: a los 50m (5000 unidades) casi invisible
+    let fade = clamp(1.0 - (t / 8000.0), 0.0, 1.0); 
     
     return vec4<f32>(0.2, 0.2, 0.2, grid * fade * 0.5);
 }
