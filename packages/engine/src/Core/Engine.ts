@@ -15,11 +15,13 @@ export class Engine {
   private animationFrameId: number | null = null;
   private static instance: Engine | null = null;
   private renderer: Renderer;
-  private world: World;
+  private worlds: Map<string, World> = new Map();
+  private activeWorldId: string | null = null;
 
   constructor() {
     this.renderer = new Renderer();
-    this.world = new World();
+    this.createWorld('MainWorld');
+    this.setActiveWorld('MainWorld');
     Engine.instance = this;
   }
 
@@ -50,7 +52,9 @@ export class Engine {
     this.isRunning = true;
     this.lastTime = performance.now();
 
-    this.world.beginPlay();
+    for (const world of this.worlds.values()) {
+      world.beginPlay();
+    }
 
     this.loop(this.lastTime);
     Logger.info("Engine loop started");
@@ -85,21 +89,56 @@ export class Engine {
   private tick(deltaTime: number): void {
     this.resizeCanvasIfNeeded();
 
-    // Update game logic
-    this.world.tick(deltaTime);
+    // 1. Update game logic en TODOS los mundos
+    for (const world of this.worlds.values()) {
+      world.tick(deltaTime);
+    }
 
     // Current temporary tick logic
     EventBus.emit('EngineTick', deltaTime);
 
-    // Delegate rendering to WebGPU Renderer
-    this.renderer.render(this.world);
+    // 2. Renderizar solo el Mundo Activo en el Canvas Principal
+    const activeWorld = this.getActiveWorld();
+    if (activeWorld) {
+      this.renderer.render(activeWorld);
+    }
+  }
+
+  // --- GESTIÓN DE MUNDOS ---
+
+  public createWorld(id: string): World {
+    if (this.worlds.has(id)) {
+      Logger.warn(`[Engine] El mundo con id '${id}' ya existe.`);
+      return this.worlds.get(id)!;
+    }
+    const newWorld = new World();
+    this.worlds.set(id, newWorld);
+    return newWorld;
+  }
+
+  public getWorld(id: string): World | undefined {
+    return this.worlds.get(id);
+  }
+
+  public getActiveWorld(): World | null {
+    if (!this.activeWorldId) return null;
+    return this.worlds.get(this.activeWorldId) || null;
+  }
+
+  public setActiveWorld(id: string): void {
+    if (this.worlds.has(id)) {
+      this.activeWorldId = id;
+    } else {
+      Logger.error(`[Engine] Intento de activar un mundo inexistente: ${id}`);
+    }
   }
 
   /**
-   * Returns the current active world.
+   * Deprecado: Usa getActiveWorld() en su lugar.
+   * Se mantiene por compatibilidad temporal con interfaces existentes.
    */
-  public getWorld(): World {
-    return this.world;
+  public get world(): World {
+    return this.getActiveWorld()!;
   }
 
   /**
