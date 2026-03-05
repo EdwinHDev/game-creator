@@ -13,6 +13,7 @@ export class UMeshComponent extends USceneComponent {
   public assetId: string = 'Primitive_Cube';
   public topology: GPUPrimitiveTopology = 'triangle-list';
   public isGizmo: boolean = false;
+  public pickingId: number = 0;
   public material: UMaterial | null = null;
   public materialPath: string | null = null;
 

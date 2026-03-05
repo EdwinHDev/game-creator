@@ -728,7 +728,7 @@ export class Renderer {
     const width = canvas.width;
     const height = canvas.height;
 
-    // Normalized Device Coordinates [-1, 1]
+    // Jitter Matrix: Centers the 1x1 render target on the mouse coordinates
     const ndcX = (mouseX / width) * 2 - 1;
     const ndcY = 1 - (mouseY / height) * 2;
 
@@ -758,16 +758,24 @@ export class Renderer {
       }
     });
 
+    // Optional: setScissorRect to 1x1 on the 1x1 texture (always (0,0,1,1))
+    pass.setScissorRect(0, 0, 1, 1);
+
     for (const actor of world.actors) {
       if (actor.bIsHidden || !actor.hasTag('Gizmo')) continue;
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
-          let axisId = 0;
-          if (component.name.includes('X_')) axisId = 1;
-          else if (component.name.includes('Y_')) axisId = 2;
-          else if (component.name.includes('Z_')) axisId = 3;
+          // Use explicit pickingId if available, fallback to legacy name detection
+          let axisId = component.pickingId;
+          if (axisId === 0) {
+            if (component.name.includes('X_')) axisId = 1;
+            else if (component.name.includes('Y_')) axisId = 2;
+            else if (component.name.includes('Z_')) axisId = 3;
+          }
 
-          this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId);
+          if (axisId > 0) {
+            this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId);
+          }
         }
       }
     }

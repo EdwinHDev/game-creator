@@ -22,3 +22,4 @@ export * from './Components/UMeshComponent';
 export * from './Components/ULightComponent';
 export * from './Components/UDirectionalLightComponent';
 export * from './Components/UGizmoComponent';
+export * from './Framework/Editor/AGizmoActor';

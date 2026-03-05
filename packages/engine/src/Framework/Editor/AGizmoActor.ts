@@ -22,6 +22,7 @@ export class AGizmoActor extends AActor {
     this.xAxisStem = this.addComponent(UMeshComponent, 'X_Stem');
     this.xAxisStem.setPrimitive('Primitive_Cylinder');
     this.xAxisStem.isGizmo = true;
+    this.xAxisStem.pickingId = 1;
     this.xAxisStem.relativeScale = stemScale;
     this.xAxisStem.relativeRotation = quat.fromEuler(quat.create(), 0, 0, -90);
     this.xAxisStem.relativeLocation = vec3.fromValues(0.5, 0, 0);
@@ -29,6 +30,7 @@ export class AGizmoActor extends AActor {
     this.xAxisTip = this.addComponent(UMeshComponent, 'X_Tip');
     this.xAxisTip.setPrimitive('Primitive_Cone');
     this.xAxisTip.isGizmo = true;
+    this.xAxisTip.pickingId = 1;
     this.xAxisTip.relativeScale = tipScale;
     this.xAxisTip.relativeRotation = quat.fromEuler(quat.create(), 0, 0, -90);
     this.xAxisTip.relativeLocation = vec3.fromValues(1.0, 0, 0);
@@ -37,12 +39,14 @@ export class AGizmoActor extends AActor {
     this.yAxisStem = this.addComponent(UMeshComponent, 'Y_Stem');
     this.yAxisStem.setPrimitive('Primitive_Cylinder');
     this.yAxisStem.isGizmo = true;
+    this.yAxisStem.pickingId = 2;
     this.yAxisStem.relativeScale = stemScale;
     this.yAxisStem.relativeLocation = vec3.fromValues(0, 0.5, 0);
 
     this.yAxisTip = this.addComponent(UMeshComponent, 'Y_Tip');
     this.yAxisTip.setPrimitive('Primitive_Cone');
     this.yAxisTip.isGizmo = true;
+    this.yAxisTip.pickingId = 2;
     this.yAxisTip.relativeScale = tipScale;
     this.yAxisTip.relativeLocation = vec3.fromValues(0, 1.0, 0);
 
@@ -50,6 +54,7 @@ export class AGizmoActor extends AActor {
     this.zAxisStem = this.addComponent(UMeshComponent, 'Z_Stem');
     this.zAxisStem.setPrimitive('Primitive_Cylinder');
     this.zAxisStem.isGizmo = true;
+    this.zAxisStem.pickingId = 3;
     this.zAxisStem.relativeScale = stemScale;
     this.zAxisStem.relativeRotation = quat.fromEuler(quat.create(), 90, 0, 0);
     this.zAxisStem.relativeLocation = vec3.fromValues(0, 0, 0.5);
@@ -57,6 +62,7 @@ export class AGizmoActor extends AActor {
     this.zAxisTip = this.addComponent(UMeshComponent, 'Z_Tip');
     this.zAxisTip.setPrimitive('Primitive_Cone');
     this.zAxisTip.isGizmo = true;
+    this.zAxisTip.pickingId = 3;
     this.zAxisTip.relativeScale = tipScale;
     this.zAxisTip.relativeRotation = quat.fromEuler(quat.create(), 90, 0, 0);
     this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, 1.0);
