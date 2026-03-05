@@ -278,7 +278,7 @@ export class MaterialPreviewer {
       });
 
       this.device.queue.writeTexture(
-        { texture: this.envTexture },
+        { texture: this.envTexture! },
         hdrData.data as any,
         { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
         [hdrData.width, hdrData.height, 1]

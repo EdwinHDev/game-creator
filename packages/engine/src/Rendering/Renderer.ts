@@ -27,6 +27,8 @@ interface FrameData {
   directionalLight: UDirectionalLightComponent | null;
   textureView: GPUTextureView;
   world: World;
+  targetWidth: number;   // <--- NUEVO
+  targetHeight: number;  // <--- NUEVO
 }
 
 /**
@@ -295,8 +297,14 @@ export class Renderer {
     Logger.info("WebGPU Renderer Initialized (Modular).");
   }
 
-  public render(world: World): void {
-    const frameData = this.prepareFrame(world);
+  public render(
+    world: World,
+    customTarget?: GPUTextureView,
+    customWidth?: number,
+    customHeight?: number,
+    customCamera?: UCameraComponent
+  ): void {
+    const frameData = this.prepareFrame(world, customTarget, customWidth, customHeight, customCamera);
     if (!frameData) return;
 
     this.executeShadowPass(frameData);
@@ -306,16 +314,30 @@ export class Renderer {
     this.submitFrame(frameData.commandEncoder);
   }
 
-  private prepareFrame(world: World): FrameData | null {
+  private prepareFrame(
+    world: World,
+    customTarget?: GPUTextureView,
+    customWidth?: number,
+    customHeight?: number,
+    customCamera?: UCameraComponent
+  ): FrameData | null {
     if (!this.device || !this.context) return null;
 
-    let mainCamera: UCameraComponent | null = null;
-    for (const actor of world.actors) {
-      if (actor.rootComponent instanceof UCameraComponent) { mainCamera = actor.rootComponent; break; }
+    // 1. Usar cámara custom o buscar la principal en el World
+    let mainCamera = customCamera;
+    if (!mainCamera) {
+      for (const actor of world.actors) {
+        if (actor.rootComponent instanceof UCameraComponent) { mainCamera = actor.rootComponent; break; }
+      }
     }
     if (!mainCamera) return null;
 
-    const aspectRatio = this.context.getCurrentTexture().width / this.context.getCurrentTexture().height;
+    // 2. Determinar el Destino (Target) y Resoluciones
+    const width = customWidth || this.context.getCurrentTexture().width;
+    const height = customHeight || this.context.getCurrentTexture().height;
+    const textureView = customTarget || this.context.getCurrentTexture().createView();
+    const aspectRatio = width / height;
+
     const viewProjMatrix = mat4.create();
     mat4.multiply(viewProjMatrix, mainCamera.getProjectionMatrix(aspectRatio), mainCamera.getViewMatrix());
     mat4.copy(this.viewProjMatrix, viewProjMatrix);
@@ -363,8 +385,10 @@ export class Renderer {
       mainCamera,
       aspectRatio,
       directionalLight,
-      textureView: this.context.getCurrentTexture().createView(),
-      world
+      textureView, // <--- Ahora usa el destino calculado
+      world,
+      targetWidth: width,   // <--- Nueva propiedad
+      targetHeight: height  // <--- Nueva propiedad
     };
   }
 
@@ -415,13 +439,16 @@ export class Renderer {
   }
 
   private executeMainPass(frameData: FrameData): void {
-    const { commandEncoder, textureView, world, viewProjMatrix } = frameData;
-    const width = this.context!.getCurrentTexture().width;
-    const height = this.context!.getCurrentTexture().height;
+    const { commandEncoder, textureView, world, viewProjMatrix, targetWidth, targetHeight } = frameData;
 
-    if (!this.depthTexture || this.depthTexture.width !== width || this.depthTexture.height !== height) {
+    // Destruye y recrea la textura de profundidad si la resolución del Target cambió
+    if (!this.depthTexture || this.depthTexture.width !== targetWidth || this.depthTexture.height !== targetHeight) {
       this.depthTexture?.destroy();
-      this.depthTexture = this.device!.createTexture({ size: [width, height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
+      this.depthTexture = this.device!.createTexture({
+        size: [targetWidth, targetHeight],
+        format: 'depth24plus',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT
+      });
       this.depthTextureView = this.depthTexture.createView();
     }
 
