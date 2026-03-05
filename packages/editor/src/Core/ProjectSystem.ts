@@ -81,19 +81,21 @@ export class ProjectSystem {
       await handle.getDirectoryHandle('Saved', { create: true });
 
       // 3. Project Manifest Creation
-      const projectFileHandle = await handle.getFileHandle('Project.gproj', { create: true });
+      const projectFileHandle = await handle.getFileHandle('project.gc', { create: true });
       const writable = await (projectFileHandle as any).createWritable();
       await writable.write(JSON.stringify({
-        name: this.projectName,
-        version: "1.0.0",
+        projectName: this.projectName,
+        startLevel: "main.gmap",
+        engineVersion: "0.1",
         created: new Date().toISOString()
       }, null, 2));
       await writable.close();
 
-      // 4. Initial Scene Creation
-      const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: true });
-      const sceneWritable = await (sceneFileHandle as any).createWritable();
-      const defaultScene = {
+      // 4. Initial Level Creation
+      const mapsDir = await handle.getDirectoryHandle('Maps', { create: true });
+      const levelFileHandle = await mapsDir.getFileHandle('main.gmap', { create: true });
+      const levelWritable = await (levelFileHandle as any).createWritable();
+      const defaultLevel = {
         actors: [
           {
             name: "DirectionalLight",
@@ -104,8 +106,8 @@ export class ProjectSystem {
           }
         ]
       };
-      await sceneWritable.write(JSON.stringify(defaultScene, null, 2));
-      await sceneWritable.close();
+      await levelWritable.write(JSON.stringify(defaultLevel, null, 2));
+      await levelWritable.close();
 
       EditorLogger.info(`Project created: ${this.projectName}`);
       this.clearUnsaved();
@@ -128,9 +130,11 @@ export class ProjectSystem {
     try {
       // Look for manifest or scene file
       try {
-        await handle.getFileHandle('Project.gproj');
+        await handle.getFileHandle('project.gc');
         return true;
       } catch {
+        // Legacy support
+        await handle.getFileHandle('Project.gproj').catch(() => null);
         await handle.getFileHandle('Scene.json');
         return true;
       }
@@ -149,13 +153,26 @@ export class ProjectSystem {
     }
 
     try {
-      const worldData = world.serialize();
-      const sceneFileHandle = await this.directoryHandle.getFileHandle('Scene.json', { create: true });
-      const writable = await (sceneFileHandle as any).createWritable();
-      await writable.write(JSON.stringify(worldData, null, 2));
-      await writable.close();
+      // 1. Save Project Metadata (project.gc)
+      const projectData = {
+        projectName: this.projectName,
+        startLevel: "main.gmap", // Hardcoded for now, will be dynamic later
+        engineVersion: "0.1"
+      };
+      const projectFileHandle = await this.directoryHandle.getFileHandle('project.gc', { create: true });
+      const projectWritable = await (projectFileHandle as any).createWritable();
+      await projectWritable.write(JSON.stringify(projectData, null, 2));
+      await projectWritable.close();
 
-      // NEW: Save all dirty materials in memory synchronously during project save
+      // 2. Save Active Level (into Maps folder)
+      const mapsDir = await this.directoryHandle.getDirectoryHandle('Maps', { create: true });
+      const worldData = world.serialize();
+      const levelFileHandle = await mapsDir.getFileHandle('main.gmap', { create: true });
+      const levelWritable = await (levelFileHandle as any).createWritable();
+      await levelWritable.write(JSON.stringify(worldData, null, 2));
+      await levelWritable.close();
+
+      // 3. Save all dirty materials
       for (const [matName, matData] of this.dirtyMaterials.entries()) {
         await this.saveMaterialData(matName, matData);
       }
@@ -198,12 +215,31 @@ export class ProjectSystem {
       // ÚNICO BLOQUE DE CARGA DE ESCENA (El optimizado)
       if (engine) {
         try {
-          const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: false });
-          const file = await sceneFileHandle.getFile();
-          const text = await file.text();
-          const sceneData = JSON.parse(text);
+          let sceneData: any = null;
 
-          const world = engine.getWorld();
+          try {
+            // New format: project.gc + Maps/main.gmap
+            const projectFileHandle = await handle.getFileHandle('project.gc', { create: false });
+            const pFile = await projectFileHandle.getFile();
+            const pText = await pFile.text();
+            const pData = JSON.parse(pText);
+
+            const mapsDir = await handle.getDirectoryHandle('Maps');
+            const levelFileHandle = await mapsDir.getFileHandle(pData.startLevel || 'main.gmap');
+            const lFile = await levelFileHandle.getFile();
+            const lText = await lFile.text();
+            sceneData = JSON.parse(lText);
+          } catch (err) {
+            // Legacy format fallback: Scene.json
+            const sceneFileHandle = await handle.getFileHandle('Scene.json', { create: false });
+            const file = await sceneFileHandle.getFile();
+            const text = await file.text();
+            sceneData = JSON.parse(text);
+          }
+
+          const world = engine.getActiveWorld();
+          if (!world) return;
+
           const device = engine.getRenderer().getDevice();
 
           await world.deserialize(sceneData);
@@ -426,13 +462,26 @@ export class ProjectSystem {
           }
         }
       } else if (type === 'material') {
-        // Search in Scene.json for references
+        // Search in Scene.json (Legacy) or all .gmap files in Maps/ for references
+        const mapsDir = await this.directoryHandle.getDirectoryHandle('Maps').catch(() => null);
+        if (mapsDir) {
+          for await (const [fileName, entry] of (mapsDir as any).entries()) {
+            if (entry.kind === 'file' && fileName.endsWith('.gmap')) {
+              const file = await entry.getFile();
+              const text = await file.text();
+              if (text.includes(fileName)) {
+                dependencies.push(`Level: ${fileName}`);
+              }
+            }
+          }
+        }
+
         const sceneFile = await this.directoryHandle.getFileHandle('Scene.json', { create: false }).catch(() => null);
         if (sceneFile) {
           const file = await sceneFile.getFile();
           const text = await file.text();
           if (text.includes(fileName)) {
-            dependencies.push(`Actor in Scene.json`);
+            dependencies.push(`Actor in Scene.json (Legacy)`);
           }
         }
       }

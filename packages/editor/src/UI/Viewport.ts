@@ -1,5 +1,5 @@
 import {
-  EventBus, AActor, UDirectionalLightComponent, quat, vec3, World
+  EventBus, AActor, UDirectionalLightComponent, quat, vec3, Engine
 } from '@game-creator/engine';
 import { GizmoManager } from '../Systems/GizmoManager';
 
@@ -10,7 +10,6 @@ import { GizmoManager } from '../Systems/GizmoManager';
 export class Viewport extends HTMLElement {
   private canvas: HTMLCanvasElement;
   private resizeObserver: ResizeObserver;
-  private _world: World | null = null;
   private gizmoManager: GizmoManager;
 
   constructor() {
@@ -31,16 +30,16 @@ export class Viewport extends HTMLElement {
   /**
    * Sets the world and initializes editor-only actors like the sun.
    */
-  set world(value: World) {
-    this._world = value;
+  set world(_value: any) {
     this.spawnSun();
   }
 
   private spawnSun() {
-    if (!this._world) return;
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld) return;
 
     // --- Phase 15: Directional Light ---
-    const lightActor = this._world.spawnActor(AActor, 'DirectionalLight', false);
+    const lightActor = activeWorld.spawnActor(AActor, 'DirectionalLight', false);
     const sun = lightActor.addComponent(UDirectionalLightComponent);
     lightActor.rootComponent = sun;
 
@@ -49,8 +48,8 @@ export class Viewport extends HTMLElement {
     quat.fromEuler(sun.relativeRotation, -45, -45, 0);
     // ------------------------------------
 
-    // Initialize GizmoManager with the new world
-    this.gizmoManager.init(this._world);
+    // Rebuild gizmos for the new world
+    this.gizmoManager.setSelectedActor(null);
   }
 
   connectedCallback() {

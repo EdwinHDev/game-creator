@@ -1,5 +1,5 @@
 import {
-  EventBus, AActor, quat, vec3, mat4, World, Engine,
+  EventBus, AActor, quat, vec3, mat4, Engine,
   getRayFromCamera, intersectRayPlane, UMeshComponent, UDirectionalLightComponent,
   UCameraComponent, AGizmoActor
 } from '@game-creator/engine';
@@ -9,7 +9,6 @@ import {
  * It manages gizmo actors, hit detection, and application of transformation deltas.
  */
 export class GizmoManager {
-  private _world: World | null = null;
   private _selectedActor: AActor | null = null;
 
   // Transform Gizmo Actor (Centralized)
@@ -50,20 +49,20 @@ export class GizmoManager {
   }
 
   /**
-   * Initializes the manager with a world.
+   * Cleans up the gizmo manager.
    */
-  public init(world: World): void {
-    this._world = world;
-    this.rebuildGizmos();
+  public destroy(): void {
+    this.hideGizmos();
   }
 
   /**
    * Sets the currently selected actor for transformation.
    */
   public setSelectedActor(actor: AActor | null): void {
+    const world = Engine.getInstance().getActiveWorld();
     this._selectedActor = actor;
-    if (this._world) {
-      this._world.selectedActorId = actor ? actor.id : null;
+    if (world) {
+      world.selectedActorId = actor ? actor.id : null;
     }
 
     if (!actor || actor.isEditorOnly) {
@@ -74,9 +73,10 @@ export class GizmoManager {
   }
 
   public async onMouseDown(e: MouseEvent, canvas: HTMLCanvasElement): Promise<void> {
-    if (e.button !== 0 || !this._selectedActor || !this._selectedActor.rootComponent || !this._world) return;
-
     const engine = Engine.getInstance();
+    const activeWorld = engine.getActiveWorld();
+    if (e.button !== 0 || !this._selectedActor || !this._selectedActor.rootComponent || !activeWorld) return;
+
     const renderer = engine.getRenderer();
 
     // 1. Get Mouse Coordinates
@@ -85,12 +85,12 @@ export class GizmoManager {
     const mouseY = e.clientY - rect.top;
 
     // 2. Find active camera
-    const cameraActor = this._world.actors.find(a => a.getComponent(UCameraComponent));
+    const cameraActor = activeWorld.actors.find(a => a.getComponent(UCameraComponent));
     const mainCamera = cameraActor?.getComponent(UCameraComponent);
     if (!mainCamera) return;
 
     // 3. GPU ID Picking
-    const gizmoId = await renderer.getGizmoIdAt(mouseX, mouseY, this._world, mainCamera);
+    const gizmoId = await renderer.getGizmoIdAt(mouseX, mouseY, activeWorld, mainCamera);
 
     let bestAxis: 'X' | 'Y' | 'Z' | null = null;
     if (gizmoId === 1) bestAxis = 'X';
@@ -109,6 +109,9 @@ export class GizmoManager {
       const width = canvas.width;
       const height = canvas.height;
       const viewProj = renderer.viewProjMatrix;
+      const activeWorld = engine.getActiveWorld();
+      if (!activeWorld) return;
+
       const ray = getRayFromCamera(mouseX, mouseY, width, height, viewProj);
 
       if (this.currentTransformMode !== 'rotate') {
@@ -245,7 +248,8 @@ export class GizmoManager {
   }
 
   private update(): void {
-    if (!this._selectedActor || !this._selectedActor.rootComponent) {
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!this._selectedActor || !this._selectedActor.rootComponent || !activeWorld) {
       this.hideGizmos();
       return;
     }
@@ -312,9 +316,10 @@ export class GizmoManager {
   }
 
   private calculateScaleFactor(pos: vec3): number {
-    if (!this._world) return 1.0;
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld) return 1.0;
     let camPos = vec3.fromValues(0, 10, 20);
-    for (const actor of this._world.actors) {
+    for (const actor of activeWorld.actors) {
       if (actor.rootComponent && (actor.name === 'MainCamera' || actor.rootComponent.constructor.name === 'UCameraComponent')) {
         camPos = actor.rootComponent.relativeLocation;
         break;
@@ -324,15 +329,16 @@ export class GizmoManager {
   }
 
   private rebuildGizmos(): void {
-    if (!this._world) return;
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld) return;
 
     // Cleanup old actors
     if (this.gizmoActor) {
-      this._world.destroyActor(this.gizmoActor);
+      activeWorld.destroyActor(this.gizmoActor);
       this.gizmoActor = null;
     }
-    if (this.lightDirectionGizmo) this._world.destroyActor(this.lightDirectionGizmo);
-    if (this.lightDirectionTip) this._world.destroyActor(this.lightDirectionTip);
+    if (this.lightDirectionGizmo) activeWorld.destroyActor(this.lightDirectionGizmo);
+    if (this.lightDirectionTip) activeWorld.destroyActor(this.lightDirectionTip);
 
     if (!this._selectedActor) return;
 
@@ -341,12 +347,12 @@ export class GizmoManager {
     if (!device) return;
 
     // Spawn the professional AGizmoActor for standard transformations
-    this.gizmoActor = this._world.spawnActor(AGizmoActor, 'EditorGizmo', true);
+    this.gizmoActor = activeWorld.spawnActor(AGizmoActor, 'EditorGizmo', true);
     this.gizmoActor.bIsHidden = true; // Hidden until update finds a selection
 
     const isSun = this._selectedActor.getComponent(UDirectionalLightComponent);
     if (isSun) {
-      this.lightDirectionGizmo = this._world.spawnActor(AActor, 'LightDirectionGizmo', true);
+      this.lightDirectionGizmo = activeWorld.spawnActor(AActor, 'LightDirectionGizmo', true);
       const mesh = this.lightDirectionGizmo.addComponent(UMeshComponent);
       this.lightDirectionGizmo.rootComponent = mesh;
       const lightCol = [1.0, 0.9, 0.2];
@@ -355,7 +361,7 @@ export class GizmoManager {
       mesh.pickingId = 3; // Z-axis equivalent for solar handle
       mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
 
-      this.lightDirectionTip = this._world.spawnActor(AActor, 'LightDirectionHandle', true);
+      this.lightDirectionTip = activeWorld.spawnActor(AActor, 'LightDirectionHandle', true);
       const tipMesh = this.lightDirectionTip.addComponent(UMeshComponent);
       this.lightDirectionTip.rootComponent = tipMesh;
       tipMesh.setPrimitive('Primitive_Sphere');
@@ -376,8 +382,9 @@ export class GizmoManager {
   }
 
   private getCameraPosition(): vec3 {
-    if (!this._world) return vec3.fromValues(0, 10, 20);
-    const cameraActor = this._world.actors.find(a => a.getComponent(UCameraComponent));
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld) return vec3.fromValues(0, 10, 20);
+    const cameraActor = activeWorld.actors.find(a => a.getComponent(UCameraComponent));
     return cameraActor?.rootComponent?.relativeLocation || vec3.fromValues(0, 10, 20);
   }
 
