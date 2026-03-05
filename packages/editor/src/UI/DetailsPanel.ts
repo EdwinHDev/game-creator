@@ -1,4 +1,4 @@
-import { EventBus, quat, UDirectionalLightComponent, UMeshComponent } from '@game-creator/engine';
+import { EventBus, quat, UDirectionalLightComponent, UMeshComponent, Engine } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 import { ProjectSystem } from '../Core/ProjectSystem';
 
@@ -71,6 +71,15 @@ export class DetailsPanel extends HTMLElement {
 
   private handleTick = () => {
     if (!this.currentActor || !this.currentActor.rootComponent) return;
+
+    // Safety check: ensure actor still belongs to active world
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld || !activeWorld.actors.includes(this.currentActor)) {
+      this.currentActor = null;
+      this.render();
+      return;
+    }
+
     this.updateInputValues();
   };
 

@@ -109,9 +109,6 @@ export class GizmoManager {
       const width = canvas.width;
       const height = canvas.height;
       const viewProj = renderer.viewProjMatrix;
-      const activeWorld = engine.getActiveWorld();
-      if (!activeWorld) return;
-
       const ray = getRayFromCamera(mouseX, mouseY, width, height, viewProj);
 
       if (this.currentTransformMode !== 'rotate') {

@@ -1,4 +1,4 @@
-import { EventBus } from '@game-creator/engine';
+import { EventBus, Engine } from '@game-creator/engine';
 import { EditorLogger } from '../Core/EditorLogger';
 
 /**
@@ -28,17 +28,20 @@ export class Outliner extends HTMLElement {
   }
 
   connectedCallback() {
-    this.render();
+    this.refresh();
 
     // Subscribe to engine events
     EventBus.on('OnActorSpawned', this.handleActorSpawned);
     EventBus.on('OnActorDestroyed', this.handleActorDestroyed);
+    EventBus.on('PROJECT_LOADED', () => this.refresh());
+    EventBus.on('OnActiveWorldChanged', () => this.refresh());
   }
 
   disconnectedCallback() {
     // Clean up subscriptions to avoid memory leaks
     EventBus.off('OnActorSpawned', this.handleActorSpawned);
     EventBus.off('OnActorDestroyed', this.handleActorDestroyed);
+    // Note: unsubscribe if using subscribe with a specific function reference
   }
 
   private handleActorSpawned = (actor: any) => {
@@ -118,8 +121,19 @@ export class Outliner extends HTMLElement {
     this.listElement.style.margin = '0';
   }
 
-  private render() {
-    // Initial container setup if needed
+  public refresh() {
+    this.listElement.innerHTML = '';
+    this.actorItems.clear();
+    this.selectedActorId = null;
+
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (activeWorld) {
+      for (const actor of activeWorld.actors) {
+        if (!actor.isEditorOnly) {
+          this.handleActorSpawned(actor);
+        }
+      }
+    }
   }
 }
 

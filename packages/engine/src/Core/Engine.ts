@@ -146,18 +146,12 @@ export class Engine {
   public setActiveWorld(id: string): void {
     if (this.worlds.has(id)) {
       this.activeWorldId = id;
+      EventBus.emit('OnActiveWorldChanged', this.getActiveWorld());
     } else {
       Logger.error(`[Engine] Intento de activar un mundo inexistente: ${id}`);
     }
   }
 
-  /**
-   * Deprecado: Usa getActiveWorld() en su lugar.
-   * Se mantiene por compatibilidad temporal con interfaces existentes.
-   */
-  public get world(): World {
-    return this.getActiveWorld()!;
-  }
 
   /**
    * Returns the active renderer.

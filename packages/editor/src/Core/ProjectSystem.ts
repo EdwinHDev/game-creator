@@ -1,4 +1,4 @@
-import { UMeshComponent, UAssetManager, EventBus } from '@game-creator/engine';
+import { UMeshComponent, UAssetManager, EventBus, Engine, AActor } from '@game-creator/engine';
 import { EditorLogger } from './EditorLogger';
 
 /**
@@ -146,17 +146,20 @@ export class ProjectSystem {
   /**
    * Saves the current experimental world state to the project directory.
    */
-  public static async saveProject(world: any): Promise<void> {
+  public static async saveProject(): Promise<void> {
     if (!this.directoryHandle) {
       EditorLogger.warn('Cannot save project: No project open.');
       return;
     }
 
     try {
+      const activeWorld = Engine.getInstance().getActiveWorld();
+      if (!activeWorld) return;
+
       // 1. Save Project Metadata (project.gc)
       const projectData = {
         projectName: this.projectName,
-        startLevel: "main.gmap", // Hardcoded for now, will be dynamic later
+        startLevel: "main.gmap",
         engineVersion: "0.1"
       };
       const projectFileHandle = await this.directoryHandle.getFileHandle('project.gc', { create: true });
@@ -166,10 +169,13 @@ export class ProjectSystem {
 
       // 2. Save Active Level (into Maps folder)
       const mapsDir = await this.directoryHandle.getDirectoryHandle('Maps', { create: true });
-      const worldData = world.serialize();
+      const levelData = {
+        levelName: "DefaultLevel",
+        actors: activeWorld.actors.filter((a: AActor) => !a.isEditorOnly).map((a: AActor) => a.serialize())
+      };
       const levelFileHandle = await mapsDir.getFileHandle('main.gmap', { create: true });
       const levelWritable = await (levelFileHandle as any).createWritable();
-      await levelWritable.write(JSON.stringify(worldData, null, 2));
+      await levelWritable.write(JSON.stringify(levelData, null, 2));
       await levelWritable.close();
 
       // 3. Save all dirty materials

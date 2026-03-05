@@ -59,10 +59,25 @@ export class Viewport extends HTMLElement {
 
     // Delegate selection and interaction to GizmoManager
     EventBus.on('OnActorSelected', (actor: any) => this.gizmoManager.setSelectedActor(actor));
+    EventBus.on('OnActiveWorldChanged', () => this.spawnSun());
 
     this.canvas.addEventListener('mousedown', (e) => this.gizmoManager.onMouseDown(e, this.canvas));
     window.addEventListener('mousemove', (e) => this.gizmoManager.onMouseMove(e, this.canvas));
     window.addEventListener('mouseup', () => this.gizmoManager.onMouseUp());
+
+    this.startRenderLoop();
+  }
+
+  private startRenderLoop() {
+    const render = () => {
+      const engine = Engine.getInstance();
+      const activeWorld = engine.getActiveWorld();
+      if (activeWorld) {
+        engine.getRenderer().render(activeWorld);
+      }
+      requestAnimationFrame(render);
+    };
+    requestAnimationFrame(render);
   }
 
   disconnectedCallback() {
