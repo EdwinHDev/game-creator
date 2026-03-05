@@ -1,6 +1,6 @@
 import {
   EventBus, AActor, quat, vec3, mat4, Engine,
-  getRayFromCamera, intersectRayPlane, UMeshComponent, UDirectionalLightComponent,
+  getRayFromCamera, intersectRayPlane, projectToScreen, UMeshComponent, UDirectionalLightComponent,
   UCameraComponent, AGizmoActor
 } from '@game-creator/engine';
 
@@ -29,6 +29,11 @@ export class GizmoManager {
   private dragStartActorRotation: quat = quat.create();
   private dragStartMouseHit: vec3 = vec3.create();
   private dragStartVector: vec3 = vec3.create();
+
+  // Hover Interaction State
+  private lastMouseX: number = 0;
+  private lastMouseY: number = 0;
+  private isCheckingHover: boolean = false;
 
   // Phase 20.3: Solar Handle
   private isDraggingSolarHandle: boolean = false;
@@ -100,6 +105,9 @@ export class GizmoManager {
     if (bestAxis) {
       this.isDraggingGizmo = true;
       this.dragAxis = bestAxis;
+      if (this.gizmoActor) {
+        this.gizmoActor.activeAxis = gizmoId;
+      }
       const pos = this._selectedActor.rootComponent.relativeLocation;
       vec3.copy(this.dragStartActorPos, pos);
       vec3.copy(this.dragStartActorScale, this._selectedActor.rootComponent.relativeScale);
@@ -142,19 +150,30 @@ export class GizmoManager {
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    const deltaX = mouseX - this.lastMouseX;
+    const deltaY = mouseY - this.lastMouseY;
+
+    this.lastMouseX = mouseX;
+    this.lastMouseY = mouseY;
+
+    if (!this.isDraggingGizmo && !this.isCheckingHover && this.gizmoActor && !this.gizmoActor.bIsHidden) {
+      this.checkHover();
+    }
+
     const ray = getRayFromCamera(mouseX, mouseY, canvas.width, canvas.height, viewProj);
 
     if (this.isDraggingGizmo && this.dragAxis && this._selectedActor?.rootComponent) {
-      const planeNormal = this.getDragPlaneNormal(this.dragAxis);
-      const hit = intersectRayPlane(ray.origin, ray.direction, this.dragStartActorPos, planeNormal);
+      const root = this._selectedActor.rootComponent;
+      const pos = root.relativeLocation;
 
-      if (hit) {
-        const delta = vec3.create();
-        vec3.subtract(delta, hit, this.dragStartMouseHit);
-        const root = this._selectedActor.rootComponent;
-        const pos = root.relativeLocation;
+      if (this.currentTransformMode === 'rotate') {
+        const planeNormal = this.getDragPlaneNormal(this.dragAxis);
+        const hit = intersectRayPlane(ray.origin, ray.direction, this.dragStartActorPos, planeNormal);
 
-        if (this.currentTransformMode === 'rotate') {
+        if (hit) {
+          const delta = vec3.create();
+          vec3.subtract(delta, hit, this.dragStartMouseHit);
           const startRot = this.dragStartActorRotation;
           const axisDir = vec3.fromValues(
             this.dragAxis === 'X' ? 1 : 0,
@@ -185,28 +204,45 @@ export class GizmoManager {
             quat.multiply(root.relativeRotation, deltaQuat, startRot);
             quat.normalize(root.relativeRotation, root.relativeRotation);
           }
-        } else if (this.currentTransformMode === 'translate') {
-          const moveAxis = vec3.fromValues(
-            this.dragAxis === 'X' ? 1 : 0,
-            this.dragAxis === 'Y' ? 1 : 0,
-            this.dragAxis === 'Z' ? 1 : 0
-          );
-          if (this.transformSpace === 'local') {
-            vec3.transformQuat(moveAxis, moveAxis, this.dragStartActorRotation);
+        }
+        EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
+        this.update();
+      } else if (this.currentTransformMode === 'translate' || this.currentTransformMode === 'scale') {
+        const moveAxis = vec3.fromValues(
+          this.dragAxis === 'X' ? 1 : 0,
+          this.dragAxis === 'Y' ? 1 : 0,
+          this.dragAxis === 'Z' ? 1 : 0
+        );
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(moveAxis, moveAxis, root.relativeRotation);
+        }
+
+        const originScreen = projectToScreen(pos, viewProj, canvas.width, canvas.height);
+        const pointOnAxis = vec3.create();
+        vec3.scaleAndAdd(pointOnAxis, pos, moveAxis, 1.0);
+        const axisScreen = projectToScreen(pointOnAxis, viewProj, canvas.width, canvas.height);
+
+        if (originScreen && axisScreen) {
+          const dx = axisScreen.x - originScreen.x;
+          const dy = axisScreen.y - originScreen.y;
+          const pixelsPerUnit = Math.sqrt(dx * dx + dy * dy);
+
+          if (pixelsPerUnit > 0.0001) {
+            const screenAxisX = dx / pixelsPerUnit;
+            const screenAxisY = dy / pixelsPerUnit;
+
+            // Proyectar el movimiento del mouse sobre el vector del eje en pantalla
+            const pixelDelta = deltaX * screenAxisX + deltaY * screenAxisY;
+            const worldDelta = pixelDelta / pixelsPerUnit;
+
+            if (this.currentTransformMode === 'translate') {
+              vec3.scaleAndAdd(pos, pos, moveAxis, worldDelta);
+            } else {
+              const sc = root.relativeScale;
+              const axisIdx = this.dragAxis === 'X' ? 0 : this.dragAxis === 'Y' ? 1 : 2;
+              sc[axisIdx] = Math.max(0.01, sc[axisIdx] + worldDelta);
+            }
           }
-          if (this.transformSpace === 'global') {
-            if (this.dragAxis === 'X') pos[0] = this.dragStartActorPos[0] + delta[0];
-            if (this.dragAxis === 'Y') pos[1] = this.dragStartActorPos[1] + delta[1];
-            if (this.dragAxis === 'Z') pos[2] = this.dragStartActorPos[2] + delta[2];
-          } else {
-            const strength = vec3.dot(delta, moveAxis);
-            vec3.scaleAndAdd(pos, this.dragStartActorPos, moveAxis, strength);
-          }
-        } else if (this.currentTransformMode === 'scale') {
-          const sc = root.relativeScale;
-          if (this.dragAxis === 'X') sc[0] = Math.max(0.01, this.dragStartActorScale[0] + delta[0]);
-          if (this.dragAxis === 'Y') sc[1] = Math.max(0.01, this.dragStartActorScale[1] + delta[1]);
-          if (this.dragAxis === 'Z') sc[2] = Math.max(0.01, this.dragStartActorScale[2] + delta[2]);
         }
         EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
         this.update();
@@ -242,6 +278,24 @@ export class GizmoManager {
     this.isDraggingGizmo = false;
     this.isDraggingSolarHandle = false;
     this.dragAxis = null;
+    if (this.gizmoActor) {
+      this.gizmoActor.activeAxis = 0;
+    }
+  }
+
+  private async checkHover(): Promise<void> {
+    this.isCheckingHover = true;
+    const engine = Engine.getInstance();
+    const activeWorld = engine.getActiveWorld();
+    const mainCamera = activeWorld?.actors.find(a => a.getComponent(UCameraComponent))?.getComponent(UCameraComponent);
+
+    if (activeWorld && mainCamera) {
+      const gizmoId = await engine.getRenderer().getGizmoIdAt(this.lastMouseX, this.lastMouseY, activeWorld, mainCamera);
+      if (this.gizmoActor) {
+        this.gizmoActor.hoverAxis = gizmoId;
+      }
+    }
+    this.isCheckingHover = false;
   }
 
   private update(): void {

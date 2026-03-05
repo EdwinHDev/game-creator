@@ -13,7 +13,7 @@ export class EditorCameraController {
   private pitch: number = -20; // 30 degrees down
   private yaw: number = 0;   // in degrees
 
-  public moveSpeed = 5.0;
+  public moveSpeed = 800.0;
   public mouseSensitivity = 0.15;
 
   constructor(canvas: HTMLCanvasElement, cameraActor: any) {

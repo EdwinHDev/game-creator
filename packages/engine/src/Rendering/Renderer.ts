@@ -43,7 +43,10 @@ export class Renderer {
   private depthTexture: GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
   private pickingTexture: GPUTexture | null = null;
+  private pickingDepthTexture: GPUTexture | null = null;
+  private pickingDepthTextureView: GPUTextureView | null = null;
   private pickingBuffer: GPUBuffer | null = null;
+  private isPicking: boolean = false;
 
   private skyPipeline: GPURenderPipeline | null = null;
   private trianglePipeline: GPURenderPipeline | null = null;
@@ -87,7 +90,7 @@ export class Renderer {
 
     this.pickingTexture = this.device.createTexture({
       size: [1, 1],
-      format: 'rgba8unorm',
+      format: this.format, // Match pipeline expected format instead of hardcoded rgba8unorm
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
     });
 
@@ -95,6 +98,13 @@ export class Renderer {
       size: 256,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
+
+    this.pickingDepthTexture = this.device.createTexture({
+      size: [1, 1],
+      format: 'depth24plus', // Matches standard pipeline config
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.pickingDepthTextureView = this.pickingDepthTexture.createView();
 
     // --- FALLBACK TEXTURES (Phase 58.3 Fix: Create these BEFORE bind groups) ---
     this.fallbackWhiteTexture = this.device.createTexture({
@@ -158,10 +168,10 @@ export class Renderer {
     }];
 
     const colorVertexBuffers: GPUVertexBufferLayout[] = [{
-      arrayStride: 24,
+      arrayStride: 48, // Fix: Must match the standard 48-byte primitive layout since gizmos reuse cones/cylinders
       attributes: [
         { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
-        { shaderLocation: 1, offset: 12, format: 'float32x3' }, // color (or fallback normal)
+        { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal (used as color fallback in shader)
       ]
     }];
 
@@ -257,7 +267,17 @@ export class Renderer {
     this.gizmoTriangleOverlayPipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
-      fragment: { module: gizmoModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
+      fragment: {
+        module: gizmoModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
+          }
+        }]
+      },
       primitive: { topology: 'triangle-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
@@ -411,7 +431,7 @@ export class Renderer {
     const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
     mat4.multiply(lightProj, fixMatrix, lightProj);
 
-    const lightEye = directionalLight ? directionalLight.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 50, 0);
+    const lightEye = directionalLight ? directionalLight.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 5000, 0);
     const lightTarget = vec3.add(vec3.create(), lightEye, lightDir);
     let up = vec3.fromValues(0, 1, 0);
     if (Math.abs(vec3.dot(lightDir, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
@@ -564,15 +584,45 @@ export class Renderer {
     for (const actor of world.actors) {
       if (actor.bIsHidden || !actor.hasTag('Gizmo')) continue;
 
+      const hoverAxis = (actor as any).hoverAxis || 0;
+      const activeAxis = (actor as any).activeAxis || 0;
+
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
-          // Identify axis by component name for coloring
-          let axisColor = new Float32Array([1, 1, 1, 1]);
-          if (component.name.includes('X_')) axisColor = new Float32Array([1.0, 0.2, 0.2, 1.0]); // Red
-          else if (component.name.includes('Y_')) axisColor = new Float32Array([0.2, 1.0, 0.2, 1.0]); // Green
-          else if (component.name.includes('Z_')) axisColor = new Float32Array([0.2, 0.2, 1.0, 1.0]); // Blue
+          let axisId = component.pickingId;
+          if (axisId === 0) {
+            if (component.name.includes('X_')) axisId = 1;
+            else if (component.name.includes('Y_')) axisId = 2;
+            else if (component.name.includes('Z_')) axisId = 3;
+          }
 
-          this.renderGizmo(pass, component, viewProjMatrix, axisColor);
+          let axisColor = new Float32Array([1, 1, 1, 1]);
+          if (axisId === 1) axisColor = new Float32Array([1.0, 0.2, 0.2, 1.0]); // Red
+          else if (axisId === 2) axisColor = new Float32Array([0.2, 1.0, 0.2, 1.0]); // Green
+          else if (axisId === 3) axisColor = new Float32Array([0.2, 0.2, 1.0, 1.0]); // Blue
+
+          let alpha = 1.0;
+          let brightness = 1.0;
+
+          if (activeAxis !== 0) {
+            // Un eje está siendo arrastrado
+            if (axisId === activeAxis) {
+              brightness = 1.5; // Brillar
+              alpha = 1.0;
+            } else {
+              alpha = 0.2; // Ocultar los demás
+            }
+          } else if (hoverAxis !== 0 && axisId === hoverAxis) {
+            // El ratón está encima
+            brightness = 1.5;
+          }
+
+          axisColor[0] = Math.min(1.0, axisColor[0] * brightness);
+          axisColor[1] = Math.min(1.0, axisColor[1] * brightness);
+          axisColor[2] = Math.min(1.0, axisColor[2] * brightness);
+          axisColor[3] = alpha;
+
+          this.renderGizmo(pass, component, viewProjMatrix, axisColor, 0);
         }
       }
     }
@@ -743,6 +793,9 @@ export class Renderer {
 
   public async getGizmoIdAt(mouseX: number, mouseY: number, world: World, camera: UCameraComponent): Promise<number> {
     if (!this.device || !this.pickingTexture || !this.pickingBuffer) return 0;
+    if (this.isPicking) return 0; // Prevent concurrent mapAsync calls
+
+    this.isPicking = true;
 
     const canvas = this.context!.canvas as HTMLCanvasElement;
     const width = canvas.width;
@@ -771,7 +824,7 @@ export class Renderer {
         storeOp: 'store'
       }],
       depthStencilAttachment: {
-        view: this.depthTextureView!,
+        view: this.pickingDepthTextureView!,
         depthClearValue: 1.0,
         depthLoadOp: 'clear',
         depthStoreOp: 'store'
@@ -811,8 +864,10 @@ export class Renderer {
 
     await this.pickingBuffer.mapAsync(GPUMapMode.READ);
     const result = new Uint8Array(this.pickingBuffer.getMappedRange());
-    const id = result[0]; // R channel
+    const id = this.format === 'bgra8unorm' ? result[2] : result[0]; // R channel
     this.pickingBuffer.unmap();
+
+    this.isPicking = false;
 
     return id;
   }

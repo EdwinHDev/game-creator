@@ -28,7 +28,7 @@ async function initEngine() {
     const cameraActor = world.spawnActor(AActor, 'MainCamera', true);
     const camera = cameraActor.addComponent(UCameraComponent);
     cameraActor.rootComponent = camera;
-    vec3.set(camera.relativeLocation, 0, 4, 12); // Standard isometric perspective (Phase 13.1)
+    vec3.set(camera.relativeLocation, 0, 400, 1200); // Standard perspective (4m high, 12m back)
 
 
     // --- Phase 10: Editor Camera Controller ---
@@ -42,61 +42,15 @@ async function initEngine() {
       topbar.render(); // Re-render now that it has the engine
     }
 
-    // --- Content Browser Mock ---
-    const assetManager = (window as any).UAssetManager || (await import('@game-creator/engine')).UAssetManager;
-    const assetList = assetManager.getInstance().getAssetDataList();
+    // --- Content Browser Data Population ---
+    // Extract assets directly from the initialized engine instance
+    const assets = engine.assetManager.getAssetDataList();
 
-    const panel = document.createElement('div');
-    panel.style.position = 'absolute';
-    panel.style.bottom = '10px';
-    panel.style.left = '50%';
-    panel.style.transform = 'translateX(-50%)';
-    panel.style.display = 'flex';
-    panel.style.gap = '8px';
-    panel.style.padding = '8px';
-    panel.style.background = 'rgba(20,20,20,0.8)';
-    panel.style.borderRadius = '8px';
-    panel.style.zIndex = '9999';
-
-    assetList.forEach((a: any) => {
-      if (a.type === 'StaticMesh') {
-        const btn = document.createElement('button');
-        btn.textContent = `Spawn ${a.name.replace('Primitive_', '')}`;
-        btn.style.padding = '5px 10px';
-        btn.style.cursor = 'pointer';
-        btn.onclick = () => {
-          const newActor = engine.spawnActorByAssetId(a.name);
-          if (newActor) {
-            EventBus.dispatch('OnActorSelected', newActor);
-            EventBus.emit('OnWorldChanged', {});
-          }
-        };
-        panel.appendChild(btn);
-      }
-    });
-
-    // Add Light Button temporarily here since we deleted it from TopBar
-    const lightBtn = document.createElement('button');
-    lightBtn.textContent = 'Spawn DL';
-    lightBtn.style.padding = '5px 10px';
-    lightBtn.style.cursor = 'pointer';
-    lightBtn.onclick = () => {
-      const world = engine.getActiveWorld()!;
-      const itemCount = world.actors.filter((a: any) => a.name.startsWith(`DirectionalLight_`)).length;
-      const newActor = world.spawnActor(AActor, `DirectionalLight_${itemCount + 1}`);
-      const light = newActor.addComponent(UDirectionalLightComponent);
-      newActor.rootComponent = light;
-      light.intensity = 5.0;
-      light.castShadows = true;
-      vec3.set(light.relativeLocation, 10, 20, 10);
-      vec3.set(light.relativeRotation, -45, 45, 0);
-      EventBus.dispatch('OnActorSelected', newActor);
-      EventBus.emit('OnWorldChanged', {});
-    };
-    panel.appendChild(lightBtn);
-
-    document.body.appendChild(panel);
-    // ----------------------------
+    const contentBrowser = document.querySelector('gc-content-browser') as any;
+    if (contentBrowser && contentBrowser.setAssets) {
+      contentBrowser.setAssets(assets);
+    }
+    // ---------------------------------------
 
     // Handle project open requests from UI
     EventBus.on('RequestProjectOpen', () => {

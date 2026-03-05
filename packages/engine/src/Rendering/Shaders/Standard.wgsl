@@ -37,7 +37,7 @@ struct LightData {
 
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
-    @location(0) normal: vec3<f32>,
+    @location(0) worldNormal: vec3<f32>,
     @location(1) worldPos: vec3<f32>,
     @location(2) shadowPos: vec4<f32>,
     @location(3) uv: vec2<f32>,
@@ -45,6 +45,32 @@ struct VertexOut {
 }
 
 const PI: f32 = 3.14159265359;
+
+// Función helper para calcular la inversa de una matriz 3x3 en WGSL
+fn inverse3x3(m: mat3x3<f32>) -> mat3x3<f32> {
+    let a00 = m[0][0]; let a01 = m[0][1]; let a02 = m[0][2];
+    let a10 = m[1][0]; let a11 = m[1][1]; let a12 = m[1][2];
+    let a20 = m[2][0]; let a21 = m[2][1]; let a22 = m[2][2];
+
+    let b01 = a22 * a11 - a12 * a21;
+    let b11 = -a22 * a10 + a12 * a20;
+    let b21 = a21 * a10 - a11 * a20;
+
+    let det = a00 * b01 + a01 * b11 + a02 * b21;
+    let invDet = 1.0 / det;
+
+    return mat3x3<f32>(
+        b01 * invDet,
+        (-a22 * a01 + a02 * a21) * invDet,
+        (a12 * a01 - a02 * a11) * invDet,
+        b11 * invDet,
+        (a22 * a00 - a02 * a20) * invDet,
+        (-a12 * a00 + a02 * a10) * invDet,
+        b21 * invDet,
+        (-a21 * a00 + a01 * a20) * invDet,
+        (a11 * a00 - a01 * a10) * invDet
+    );
+}
 
 @vertex
 fn vs_main(
@@ -58,8 +84,18 @@ fn vs_main(
     var out: VertexOut;
     out.pos = uniforms.mvpMatrix * vec4<f32>(position, 1.0);
     out.worldPos = worldPosVec4.xyz;
-    // We treat normal transformation simply for now. Ideally use inverse transpose of modelMatrix.
-    out.normal = (uniforms.modelMatrix * vec4<f32>(normal, 0.0)).xyz;
+    
+    // CORRECCIÓN PROFESIONAL DE NORMALES:
+    // Para evitar errores por escalas no-uniformes, usamos la matriz normal 
+    // (Inversa Transpuesta de la matriz de modelo 3x3)
+    let normalMatrix = transpose(inverse3x3(mat3x3<f32>(
+        uniforms.modelMatrix[0].xyz,
+        uniforms.modelMatrix[1].xyz,
+        uniforms.modelMatrix[2].xyz
+    )));
+    
+    out.worldNormal = normalize(normalMatrix * normal);
+    
     out.shadowPos = scene.lightViewProj * worldPosVec4;
     out.uv = uv;
     // Phase 34: Convert the 3D tangential direction to world space
@@ -108,7 +144,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     
     let texRoughness = textureSample(roughnessMap, baseColorSampler, in.uv).r;
     
-    var N = normalize(in.normal);
+    var N = normalize(in.worldNormal);
     let mapNormal = textureSample(normalMap, baseColorSampler, in.uv).rgb;
     let localNormal = mapNormal * 2.0 - 1.0;
 

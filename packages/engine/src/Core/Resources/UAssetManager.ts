@@ -48,6 +48,17 @@ export class UAssetManager {
   }
 
   /**
+   * Used for the UI to list all registered primitive and loaded assets
+   */
+  public getAssetDataList(): { id: string, name: string, type: string }[] {
+    const list: { id: string, name: string, type: string }[] = [];
+    this.assets.forEach((asset, id) => {
+      list.push({ id: id, name: asset.name, type: asset.type });
+    });
+    return list;
+  }
+
+  /**
    * Initializes basic primitives (Box, Plane, Sphere, Cylinder, Cone, Capsule) and registers them in the asset cache.
    */
   public static async init(device: GPUDevice) {
@@ -81,13 +92,13 @@ export class UAssetManager {
         const y = cosTheta;
         const z = sinPhi * sinTheta;
 
-        // Position
+        // Position (3)
         vertices.push(x * radius, y * radius, z * radius);
-        // Normal
+        // Normal (3)
         vertices.push(x, y, z);
-        // UV
+        // UV (2)
         vertices.push(lon / segments, lat / segments);
-        // Tangent
+        // Tangent (4)
         vertices.push(-sinPhi, 0, cosPhi, 1.0);
       }
     }
@@ -97,8 +108,8 @@ export class UAssetManager {
         const first = (lat * (segments + 1)) + lon;
         const second = first + segments + 1;
 
-        indices.push(first, second, first + 1);
-        indices.push(second, second + 1, first + 1);
+        indices.push(first, first + 1, second);
+        indices.push(second, first + 1, second + 1);
       }
     }
 
@@ -241,9 +252,13 @@ export class UAssetManager {
         const y = cosTheta;
         const z = sinPhi * sinTheta;
 
+        // Position (3)
         vertices.push(x * radius, (y * radius) + yOffset, z * radius);
+        // Normal (3)
         vertices.push(x, y, z);
+        // UV (2)
         vertices.push(lon / segments, lat / latEnd);
+        // Tangent (4)
         vertices.push(-sinPhi, 0, cosPhi, 1.0);
       }
     }
@@ -297,12 +312,12 @@ export class UAssetManager {
     ]);
 
     const indices = new Uint32Array([
-      0, 1, 2, 0, 2, 3, // Front
-      4, 5, 6, 4, 6, 7, // Back
-      8, 9, 10, 8, 10, 11, // Top
-      12, 13, 14, 12, 14, 15, // Bottom
-      16, 17, 18, 16, 18, 19, // Right
-      20, 21, 22, 20, 22, 23, // Left
+      0, 2, 1, 0, 3, 2,     // Front
+      4, 6, 5, 4, 7, 6,     // Back
+      8, 10, 9, 8, 11, 10,  // Top
+      12, 14, 13, 12, 15, 14, // Bottom
+      16, 18, 17, 16, 19, 18, // Right
+      20, 22, 21, 20, 23, 22, // Left
     ]);
 
     this.assets.set(EPrimitiveType.BOX, new UAsset(EPrimitiveType.BOX, device, vertices, indices));
@@ -310,12 +325,16 @@ export class UAssetManager {
 
   private createPlanePrimitive(device: GPUDevice) {
     // A standard 100.0 unit plane on XZ axis
-    // Layout: Position (3f), Normal (3f), UV (2f), Tangent (4f)
+    // Layout: Position (3f), Normal (3f), UV (2f), Tangent (4f) => 12 floats per vertex
     const vertices = new Float32Array([
-      -50.0, 0, -50.0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      50.0, 0, -50.0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
-      50.0, 0, 50.0, 0, 1, 0, 1, 1, 1, 0, 0, 1,
-      -50.0, 0, 50.0, 0, 1, 0, 0, 1, 1, 0, 0, 1
+      // Point 0 (Bottom-Left)
+      -50.0, 0.0, -50.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+      // Point 1 (Bottom-Right)
+      50.0, 0.0, -50.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+      // Point 2 (Top-Right)
+      50.0, 0.0, 50.0, 0.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0,
+      // Point 3 (Top-Left)
+      -50.0, 0.0, 50.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0
     ]);
     const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
     this.assets.set(EPrimitiveType.PLANE, new UAsset(EPrimitiveType.PLANE, device, vertices, indices));
@@ -552,8 +571,7 @@ export class UAssetManager {
     this.textureCache.clear();
     this.materialCache.clear();
 
-    // Also clear primitives cached as UAssets
-    this.assets.forEach(asset => asset.destroy());
-    this.assets.clear();
+    // NOTA: No destruimos 'this.assets' (los primitivos) ya que son globales del motor
+    // y deben existir a través de diferentes proyectos.
   }
 }

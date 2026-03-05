@@ -92,3 +92,28 @@ export function distancePointToSegment(p: vec3, a: vec3, b: vec3): number {
  * Closest distance between two infinite lines (untested/not strictly needed for segment hit).
  * Using distancePointToSegment is often enough for gizmos.
  */
+
+/**
+ * Projects a 3D position into 2D Screen Space pixels.
+ */
+export function projectToScreen(
+  worldPos: vec3,
+  viewProjMatrix: mat4,
+  canvasWidth: number,
+  canvasHeight: number
+): { x: number, y: number } | null {
+  const clipSpacePos = vec4.fromValues(worldPos[0], worldPos[1], worldPos[2], 1.0);
+  vec4.transformMat4(clipSpacePos, clipSpacePos, viewProjMatrix);
+
+  if (clipSpacePos[3] <= 0) return null; // Behind camera
+
+  // Perspective Divide
+  const ndcX = clipSpacePos[0] / clipSpacePos[3];
+  const ndcY = clipSpacePos[1] / clipSpacePos[3];
+
+  // NDC to Window coordinates
+  const x = (ndcX + 1.0) * 0.5 * canvasWidth;
+  const y = (1.0 - ndcY) * 0.5 * canvasHeight;
+
+  return { x, y };
+}

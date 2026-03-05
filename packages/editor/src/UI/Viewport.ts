@@ -1,7 +1,8 @@
 import {
-  EventBus, AActor, UDirectionalLightComponent, quat, vec3, Engine
+  EventBus, Engine
 } from '@game-creator/engine';
 import { GizmoManager } from '../Systems/GizmoManager';
+import { EditorLogger } from '../Core/EditorLogger';
 
 /**
  * Viewport Web Component that hosts the 3D Engine Canvas.
@@ -35,6 +36,9 @@ export class Viewport extends HTMLElement {
   }
 
   private spawnSun() {
+    // === Deshabilitado temporalmente para romper recursión inicial ===
+    // El sol debe crearse mediante una factoría más estable tras inicializar todo
+    /*
     const activeWorld = Engine.getInstance().getActiveWorld();
     if (!activeWorld) return;
 
@@ -47,6 +51,7 @@ export class Viewport extends HTMLElement {
     vec3.set(sun.relativeLocation, 0, 15, 0); // Raised sun
     quat.fromEuler(sun.relativeRotation, -45, -45, 0);
     // ------------------------------------
+    */
 
     // Rebuild gizmos for the new world
     this.gizmoManager.setSelectedActor(null);
@@ -59,11 +64,33 @@ export class Viewport extends HTMLElement {
 
     // Delegate selection and interaction to GizmoManager
     EventBus.on('OnActorSelected', (actor: any) => this.gizmoManager.setSelectedActor(actor));
-    EventBus.on('OnActiveWorldChanged', () => this.spawnSun());
+
+    // RECURSIÓN ROTA: Comentamos esto temporalmente
+    // EventBus.on('OnActiveWorldChanged', () => this.spawnSun());
 
     this.canvas.addEventListener('mousedown', (e) => this.gizmoManager.onMouseDown(e, this.canvas));
     window.addEventListener('mousemove', (e) => this.gizmoManager.onMouseMove(e, this.canvas));
     window.addEventListener('mouseup', () => this.gizmoManager.onMouseUp());
+
+    // Drag and Drop (Unreal Style)
+    this.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+
+    this.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const assetId = e.dataTransfer?.getData('gc-asset-id');
+      if (assetId) {
+        const engine = Engine.getInstance();
+        const newActor = engine.spawnActorByAssetId(assetId);
+        if (newActor) {
+          EditorLogger.info(`Actor instanciado desde Content Browser: ${newActor.name}`);
+          EventBus.dispatch('OnActorSelected', newActor);
+          EventBus.emit('OnWorldChanged', {});
+        }
+      }
+    });
 
     this.startRenderLoop();
   }

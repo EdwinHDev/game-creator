@@ -150,6 +150,8 @@ export class Engine {
   }
 
   public setActiveWorld(id: string): void {
+    if (this.activeWorldId === id) return; // Break Recursion
+
     if (this.worlds.has(id)) {
       this.activeWorldId = id;
       EventBus.emit('OnActiveWorldChanged', this.getActiveWorld());
@@ -163,17 +165,22 @@ export class Engine {
    */
   public spawnActorByAssetId(assetId: string): AActor | null {
     const asset = UAssetManager.getAsset(assetId);
-    if (!asset) {
-      Logger.error(`[Engine] Asset no encontrado en Manager: ${assetId}`);
+    const world = this.getActiveWorld();
+    if (!asset || !world) {
+      Logger.error(`[Engine] No se pudo spawnear: Asset ${assetId} o Mundo no encontrado.`);
       return null;
     }
-
-    const world = this.getActiveWorld();
-    if (!world) return null;
 
     return UActorFactory.spawnFromAsset(asset, world);
   }
 
+
+  /**
+   * Returns the global UAssetManager instance.
+   */
+  public get assetManager(): typeof UAssetManager.prototype {
+    return UAssetManager.getInstance();
+  }
 
   /**
    * Returns the active renderer.

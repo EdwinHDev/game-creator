@@ -12,6 +12,7 @@ export class ContentBrowser extends HTMLElement {
   private contentArea: HTMLDivElement;
   private currentTab: string = 'All';
   private isRefreshing: boolean = false;
+  private engineAssets: any[] = [];
 
   constructor() {
     super();
@@ -45,7 +46,7 @@ export class ContentBrowser extends HTMLElement {
     this.tabsContainer = document.createElement('div');
     this.tabsContainer.style.display = 'flex';
 
-    const tabs = ['All', 'Textures', 'Models', 'Materials'];
+    const tabs = ['All', 'Assets', 'Textures', 'Models', 'Materials'];
     tabs.forEach(tab => {
       const btn = document.createElement('button');
       btn.textContent = tab;
@@ -169,6 +170,7 @@ export class ContentBrowser extends HTMLElement {
 
     // 3. CONTENT AREA (Área de archivos)
     this.contentArea = document.createElement('div');
+    this.contentArea.className = 'assets-grid'; // Fallback per User Instructions
     this.contentArea.style.display = 'flex';
     this.contentArea.style.flexWrap = 'wrap';
     this.contentArea.style.gap = '10px';
@@ -176,7 +178,65 @@ export class ContentBrowser extends HTMLElement {
     this.contentArea.style.flex = '1';
     this.contentArea.style.overflowY = 'auto';
     this.contentArea.style.alignContent = 'flex-start';
+    this.contentArea.style.backgroundColor = 'var(--bg-panel)';
     this.appendChild(this.contentArea);
+  }
+
+  public setAssets(assets: any[]) {
+    this.engineAssets = assets;
+    this.refreshContent();
+  }
+
+  private renderEngineAssets() {
+    this.engineAssets.forEach(asset => {
+      const item = document.createElement('div');
+      item.className = 'asset-item';
+      // Usar estilos base limpios o clases si hicieran falta en tokens
+      item.style.width = '80px';
+      item.style.minHeight = '100px';
+      item.style.display = 'flex';
+      item.style.flexDirection = 'column';
+      item.style.alignItems = 'center';
+      item.style.padding = '8px';
+      item.style.cursor = 'grab';
+      item.style.borderRadius = '4px';
+      item.style.transition = 'background-color 0.2s, outline 0.2s';
+      item.style.backgroundColor = 'transparent';
+
+      item.onmouseenter = () => {
+        item.style.backgroundColor = 'var(--bg-surface)';
+        item.style.outline = '1px solid var(--accent-color)';
+      };
+      item.onmouseleave = () => {
+        item.style.backgroundColor = 'transparent';
+        item.style.outline = 'none';
+      };
+
+      const iconSymbol = asset.type === 'StaticMesh' ? '🧊' : '📄';
+      const rawName = asset.name.replace('Primitive_', '');
+
+      item.innerHTML = `
+            <div class="asset-icon" style="width: 48px; height: 48px; margin-bottom: 8px; display: flex; justify-content: center; align-items: center; font-size: 40px;">
+                ${iconSymbol}
+            </div>
+            <span class="asset-label" style="font-size: 0.75rem; color: var(--text-main); text-align: center; word-break: break-all;">
+                ${rawName}
+            </span>
+        `;
+
+      item.draggable = true;
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer?.setData('gc-asset-id', asset.id);
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        item.style.opacity = '0.5';
+      });
+
+      item.addEventListener('dragend', () => {
+        item.style.opacity = '1';
+      });
+
+      this.contentArea.appendChild(item);
+    });
   }
 
   connectedCallback() {
@@ -261,14 +321,18 @@ export class ContentBrowser extends HTMLElement {
     this.isRefreshing = true;
 
     try {
+      // Limpiamos el DOM estrictamente AQUÍ
+      this.contentArea.innerHTML = '';
+
+      // Renderizamos Primitivos de Motor si aplican a la pestaña
+      if (this.currentTab === 'All' || this.currentTab === 'Assets') {
+        this.renderEngineAssets();
+      }
+
       const handle = ProjectSystem.getDirectoryHandle();
       if (!handle) return;
 
       const assetsHandle = await handle.getDirectoryHandle('Assets', { create: true });
-
-      // Limpiamos el DOM estrictamente AQUÍ, justo antes del escaneo
-      this.contentArea.innerHTML = '';
-
       await this.scanDirectory(assetsHandle);
     } catch (e) {
       EditorLogger.error("Error leyendo carpeta Assets:", e);
