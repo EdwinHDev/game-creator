@@ -1,9 +1,9 @@
-import { UActorComponent } from '../Framework/UActorComponent';
+import { USceneComponent } from '../Framework/USceneComponent';
 
 /**
  * Component responsible for managing and providing environment lighting (IBL).
  */
-export class USkyLightComponent extends UActorComponent {
+export class USkyLightComponent extends USceneComponent {
   public intensity: number = 1.0;
   public hdrPath: string | null = null;
   public envTexture: GPUTexture | null = null;

@@ -1,26 +1,26 @@
-import { mat4 } from 'gl-matrix';
-import { UMaterial } from './UMaterial';
+import { Engine } from '../Core/Engine';
+import { World } from '../Framework/World';
+import { AActor } from '../Framework/AActor';
+import { UMeshComponent } from '../Components/UMeshComponent';
+import { UCameraComponent } from '../Components/UCameraComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
-import standardShader from './Shaders/Standard.wgsl?raw';
+import { USkyLightComponent } from '../Components/USkyLightComponent';
+import { UMaterial } from './UMaterial';
+import { Renderer } from './Renderer';
+import { vec3, quat } from 'gl-matrix';
 
 /**
  * Isolated renderer to preview a material on a sphere.
- * Used in the Details Panel for real-time visual feedback.
+ * Now utilizes the standardized Engine/World architecture for isolated rendering.
  */
 export class MaterialPreviewer {
-  private device: GPUDevice;
+  private renderer: Renderer;
+  private world: World;
+  private previewCamera: UCameraComponent;
+  private sphereMesh: UMeshComponent;
+  private skyComponent: USkyLightComponent;
+  private canvas: HTMLCanvasElement;
   private context: GPUCanvasContext;
-  private format: GPUTextureFormat;
-
-  private pipeline: GPURenderPipeline | null = null;
-  private vertexBuffer: GPUBuffer | null = null;
-  private indexBuffer: GPUBuffer | null = null;
-  private indexCount: number = 0;
-  private isDestroyed: boolean = false;
-
-  private depthTexture: GPUTexture | null = null;
-  private currentMaterial: UMaterial | null = null;
-  private isRendering: boolean = false;
 
   private rotX: number = 0;
   private rotY: number = 0;
@@ -28,93 +28,59 @@ export class MaterialPreviewer {
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
 
-  private envTexture: GPUTexture | null = null;
-  private fallbackHDRTexture: GPUTexture;
-  private internalFallbackTexture: GPUTexture | null = null;
-
-  private materialUniformBuffer: GPUBuffer | null = null;
-  private sceneUniformBuffer: GPUBuffer | null = null;
-
-  private fallbackWhiteTexture: GPUTexture;
-  private fallbackFlatNormalTexture: GPUTexture;
-  private dummyShadowTexture: GPUTexture;
-  private defaultSampler: GPUSampler;
-  private shadowSampler: GPUSampler;
-
   constructor(canvas: HTMLCanvasElement, device: GPUDevice) {
-    this.device = device;
+    this.canvas = canvas;
+    const engine = Engine.getInstance();
+    this.renderer = engine.getRenderer();
+
+    // 1. Inicializar contexto para el canvas local
     this.context = canvas.getContext('webgpu') as GPUCanvasContext;
-    this.format = navigator.gpu.getPreferredCanvasFormat();
-
     this.context.configure({
-      device: this.device,
-      format: this.format,
-      alphaMode: 'opaque',
+      device: device,
+      format: navigator.gpu.getPreferredCanvasFormat(),
+      alphaMode: 'opaque'
     });
 
-    // 1. Fallback Textures
-    this.fallbackWhiteTexture = this.createSolidTexture([255, 255, 255, 255]);
-    this.fallbackFlatNormalTexture = this.createSolidTexture([128, 128, 255, 255]);
-    this.dummyShadowTexture = this.device.createTexture({
-      size: [2, 2, 1],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
-    });
+    // 2. Crear mundo dedicado (MaterialPreviewWorld)
+    this.world = engine.createWorld('MaterialPreviewWorld');
 
-    this.fallbackHDRTexture = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba32float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
-    });
-    this.device.queue.writeTexture(
-      { texture: this.fallbackHDRTexture },
-      new Float32Array([0.1, 0.1, 0.1, 1.0]) as any,
-      { bytesPerRow: 16 },
-      [1, 1, 1]
-    );
+    // 3. Setup Escena de Previsualización (Lookdev Studio)
 
-    this.defaultSampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      mipmapFilter: 'linear',
-    });
+    // A. Esfera de Previsualización
+    const sphereActor = this.world.spawnActor(AActor, 'PreviewSphere', true);
+    this.sphereMesh = sphereActor.addComponent(UMeshComponent);
+    this.sphereMesh.setPrimitive('Primitive_Sphere');
+    sphereActor.rootComponent = this.sphereMesh;
 
-    this.shadowSampler = this.device.createSampler({
-      compare: 'less',
-      magFilter: 'linear',
-      minFilter: 'linear',
-    });
+    // B. Cámara de Estudio
+    const cameraActor = this.world.spawnActor(AActor, 'PreviewCamera', true);
+    this.previewCamera = cameraActor.addComponent(UCameraComponent);
+    cameraActor.rootComponent = this.previewCamera;
+    this.previewCamera.relativeLocation = vec3.fromValues(0, 0, 3.5);
 
-    // 2. Uniform Buffers
-    // Material Uniforms: MVP (64) + Model (64) + BaseColor (16) + Roughness (4) + Metallic (4) + Padding (8) = 160
-    this.materialUniformBuffer = this.device.createBuffer({
-      size: 160,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    // C. Luz Direccional (Studio Light - Key Light)
+    const lightActor = this.world.spawnActor(AActor, 'PreviewLight', true);
+    const sun = lightActor.addComponent(UDirectionalLightComponent);
+    sun.color = new Float32Array([1, 1, 1]);
+    sun.intensity = 1.5;
+    lightActor.rootComponent = sun;
 
-    // Scene Uniforms: LightDir (16) + LightColor (16) + LightVP (64) + CameraPos (16) + InvVP (64) = 176 (rounded to 192 for alignment)
-    this.sceneUniformBuffer = this.device.createBuffer({
-      size: 192,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    // Rotación diagonal clásica para resaltar volúmenes
+    const lightRotation = quat.create();
+    quat.fromEuler(lightRotation, -45, -45, 0);
+    sun.relativeRotation = lightRotation;
 
-    this.initGeometry();
-    this.initPipeline();
+    // D. SkyLight (IBL para reflejos realistas)
+    const skyActor = this.world.spawnActor(AActor, 'PreviewSky', true);
+    this.skyComponent = skyActor.addComponent(USkyLightComponent);
+    this.skyComponent.intensity = 1.0;
 
-    this.internalFallbackTexture = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba32float',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
-    });
+    // Interacción por ratón
+    this.initInteraction();
+  }
 
-    this.depthTexture = this.device.createTexture({
-      size: [256, 256],
-      format: 'depth24plus',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    // Mouse Interaction
-    canvas.addEventListener('mousedown', (e) => {
+  private initInteraction() {
+    this.canvas.addEventListener('mousedown', (e) => {
       this.isDragging = true;
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
@@ -124,10 +90,16 @@ export class MaterialPreviewer {
       if (!this.isDragging) return;
       const deltaX = e.clientX - this.lastMouseX;
       const deltaY = e.clientY - this.lastMouseY;
+
       this.rotY += deltaX * 0.01;
       this.rotX += deltaY * 0.01;
-      // Clamp X rotation to avoid flipping
       this.rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.rotX));
+
+      // Aplicar rotación a la esfera (Lookdev standard)
+      const rotation = quat.create();
+      quat.fromEuler(rotation, this.rotX * (180 / Math.PI), this.rotY * (180 / Math.PI), 0);
+      this.sphereMesh.relativeRotation = rotation;
+
       this.lastMouseX = e.clientX;
       this.lastMouseY = e.clientY;
     });
@@ -137,299 +109,42 @@ export class MaterialPreviewer {
     });
   }
 
-  private createSolidTexture(color: number[]): GPUTexture {
-    const tex = this.device.createTexture({
-      size: [1, 1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-    this.device.queue.writeTexture(
-      { texture: tex },
-      new Uint8Array(color),
-      { bytesPerRow: 4, rowsPerImage: 1 },
-      [1, 1, 1]
-    );
-    return tex;
-  }
-
-  private initGeometry() {
-    const radius = 1.0;
-    const segments = 32;
-    const vertices: number[] = [];
-    const indices: number[] = [];
-
-    for (let y = 0; y <= segments; y++) {
-      const v = y / segments;
-      const phi = v * Math.PI;
-      for (let x = 0; x <= segments; x++) {
-        const u = x / segments;
-        const theta = u * Math.PI * 2;
-        const px = radius * Math.sin(phi) * Math.cos(theta);
-        const py = radius * Math.cos(phi);
-        const pz = radius * Math.sin(phi) * Math.sin(theta);
-        const nx = px / radius, ny = py / radius, nz = pz / radius;
-        let tx = -Math.sin(theta), ty = 0, tz = Math.cos(theta);
-        const tLen = Math.sqrt(tx * tx + tz * tz);
-        if (tLen > 0.0001) { tx /= tLen; tz /= tLen; } else { tx = 1; ty = 0; tz = 0; }
-        vertices.push(px, py, pz, nx, ny, nz, u, 1 - v, tx, ty, tz, 1.0);
-      }
+  /**
+   * Carga un HDRI específico para el previewer.
+   */
+  public async loadEnvironment(path: string = '/environments/pretoria_gardens_1k.hdr') {
+    const device = this.renderer.getDevice();
+    if (device) {
+      await this.skyComponent.loadHDR(path, device);
     }
-    for (let y = 0; y < segments; y++) {
-      for (let x = 0; x < segments; x++) {
-        const i1 = y * (segments + 1) + x;
-        const i2 = i1 + 1;
-        const i3 = (y + 1) * (segments + 1) + x;
-        const i4 = i3 + 1;
-        indices.push(i1, i2, i3, i2, i4, i3);
-      }
-    }
-
-    this.indexCount = indices.length;
-    this.vertexBuffer = this.device.createBuffer({
-      size: vertices.length * 4,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Float32Array(this.vertexBuffer.getMappedRange()).set(vertices);
-    this.vertexBuffer.unmap();
-
-    this.indexBuffer = this.device.createBuffer({
-      size: indices.length * 2,
-      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Uint16Array(this.indexBuffer.getMappedRange()).set(indices);
-    this.indexBuffer.unmap();
   }
 
-  private initPipeline() {
-    const module = this.device.createShaderModule({ code: standardShader });
-
-    const materialBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
-      ]
-    });
-
-    const sceneBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }
-      ]
-    });
-
-    const layout = this.device.createPipelineLayout({
-      bindGroupLayouts: [materialBindGroupLayout, sceneBindGroupLayout]
-    });
-
-    this.pipeline = this.device.createRenderPipeline({
-      layout,
-      vertex: {
-        module,
-        entryPoint: 'vs_main',
-        buffers: [{
-          arrayStride: 48,
-          attributes: [
-            { shaderLocation: 0, offset: 0, format: 'float32x3' }, // position
-            { shaderLocation: 1, offset: 12, format: 'float32x3' }, // normal
-            { shaderLocation: 2, offset: 24, format: 'float32x2' }, // uv
-            { shaderLocation: 3, offset: 32, format: 'float32x4' }, // tangent
-          ]
-        }]
-      },
-      fragment: {
-        module,
-        entryPoint: 'fs_main',
-        targets: [{ format: this.format }]
-      },
-      primitive: { topology: 'triangle-list', cullMode: 'back' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' }
-    });
-  }
-
+  /**
+   * Renderiza el material actual en el mundo de previsualización.
+   */
   public render(material: UMaterial) {
-    this.currentMaterial = material;
-    if (!this.isRendering && !this.isDestroyed) {
-      this.isRendering = true;
-      this.renderLoop();
-    }
-  }
+    if (!this.world || !this.renderer) return;
 
-  public async loadEnvironment() {
-    try {
-      // this.loadEnvironment(); // Desactivado temporalmente
-      const response = await fetch('/environments/pretoria_gardens_1k.hdr');
-      if (!response.ok) throw new Error("HDRI no encontrado");
-      const buffer = await response.arrayBuffer();
+    // Sincronizar material editado con la esfera
+    this.sphereMesh.material = material;
 
-      const { RGBELoader } = await import('../Core/Resources/RGBELoader');
-      const hdrData = RGBELoader.parse(buffer);
+    // Actualizar jerarquía del mundo (matrices)
+    this.world.tick(0);
 
-      this.envTexture = this.device.createTexture({
-        size: [hdrData.width, hdrData.height, 1],
-        format: 'rgba32float',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-      });
+    const targetView = this.context.getCurrentTexture().createView();
 
-      this.device.queue.writeTexture(
-        { texture: this.envTexture! },
-        hdrData.data as any,
-        { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
-        [hdrData.width, hdrData.height, 1]
-      );
-    } catch (e) {
-      console.error("Error cargando HDRI del editor:", e);
-    }
-  }
-
-  private renderLoop = () => {
-    if (this.isDestroyed || !this.pipeline || !this.currentMaterial || !this.depthTexture || !this.vertexBuffer || !this.indexBuffer) {
-      this.isRendering = false;
-      return;
-    }
-
-    // 0. Auto-Resize Canvas & Aspect Ratio
-    const canvas = this.context.canvas as HTMLCanvasElement;
-    if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
-
-      // Recreate depth texture on resize
-      this.depthTexture.destroy();
-      this.depthTexture = this.device.createTexture({
-        size: [canvas.width, canvas.height],
-        format: 'depth24plus',
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-    }
-
-    const aspect = canvas.width / canvas.height;
-
-    // 1. Update Uniforms
-    const modelMatrix = mat4.create();
-    mat4.rotateX(modelMatrix, modelMatrix, this.rotX);
-    mat4.rotateY(modelMatrix, modelMatrix, this.rotY);
-
-    const viewMatrix = mat4.create();
-    mat4.lookAt(viewMatrix, [0, 0, 3.2], [0, 0, 0], [0, 1, 0]);
-
-    const projectionMatrix = mat4.create();
-    mat4.perspective(projectionMatrix, Math.PI / 4, aspect, 0.1, 10.0);
-
-    const mvpMatrix = mat4.create();
-    mat4.multiply(mvpMatrix, projectionMatrix, viewMatrix);
-    mat4.multiply(mvpMatrix, mvpMatrix, modelMatrix);
-
-    // Material Data
-    const matData = new Float32Array(40); // 160 bytes / 4
-    matData.set(mvpMatrix, 0);
-    matData.set(modelMatrix, 16);
-    matData.set(this.currentMaterial.baseColor, 32);
-    // Ajuste de Roughness visual para el preview:
-    // Si el material es muy liso (0), le damos un mínimo de 0.05 para que no sea un espejo irreal
-    const visualRoughness = Math.max(this.currentMaterial.roughness, 0.05);
-    matData[36] = visualRoughness;
-
-    // TRUCO: Si el material NO es metálico, enviamos un valor de metallic 
-    // extremadamente bajo para que el shader ignore casi todo el reflejo especular nítido.
-    const isMetallic = this.currentMaterial.metallic > 0.5;
-    matData[37] = isMetallic ? this.currentMaterial.metallic : 0.02;
-
-    this.device.queue.writeBuffer(this.materialUniformBuffer!, 0, matData);
-
-    // Busca el componente de luz direccional en el mundo
-    const world = (this as any).renderer?.world; // Acceso temporal al world
-    const sun = world?.getComponents(UDirectionalLightComponent)[0];
-
-    const sunColor = sun ? sun.color : [1, 1, 1];
-    const sunIntensity = sun ? sun.intensity : 1.0;
-
-    // Scene Data (Actualiza con la luz del sol real)
-    const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([0, 0, 1, 0], 0); // Dirección fija (frontal)
-    sceneData.set([
-      sunColor[0] * sunIntensity,
-      sunColor[1] * sunIntensity,
-      sunColor[2] * sunIntensity,
-      1
-    ], 4);
-    sceneData.set(mat4.create(), 8);   // lightVP (dummy)
-    sceneData.set([0, 0, 3.2, 1], 24); // Cámara
-    sceneData.set(mat4.create(), 28);  // invVP (dummy)
-    this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
-
-    // 2. Bind Groups
-    const matBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: { buffer: this.materialUniformBuffer! } },
-        { binding: 1, resource: this.defaultSampler },
-        { binding: 2, resource: this.currentMaterial.baseColorTexture?.createView() || this.fallbackWhiteTexture.createView() },
-        { binding: 3, resource: this.currentMaterial.roughnessTexture?.createView() || this.fallbackWhiteTexture.createView() },
-        { binding: 4, resource: this.currentMaterial.normalTexture?.createView() || this.fallbackFlatNormalTexture.createView() },
-      ]
-    });
-
-    const sceneBindGroup = this.device.createBindGroup({
-      layout: this.pipeline.getBindGroupLayout(1),
-      entries: [
-        { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
-        { binding: 1, resource: this.dummyShadowTexture.createView() },
-        { binding: 2, resource: this.shadowSampler },
-        { binding: 3, resource: (this.envTexture ? this.envTexture : this.internalFallbackTexture!).createView() }
-      ]
-    });
-
-    // 3. Render Pass
-    const commandEncoder = this.device.createCommandEncoder();
-    const pass = commandEncoder.beginRenderPass({
-      colorAttachments: [{
-        view: this.context.getCurrentTexture().createView(),
-        clearValue: { r: 0.05, g: 0.05, b: 0.05, a: 1.0 },
-        loadOp: 'clear',
-        storeOp: 'store',
-      }],
-      depthStencilAttachment: {
-        view: this.depthTexture.createView(),
-        depthClearValue: 1.0,
-        depthLoadOp: 'clear',
-        depthStoreOp: 'store',
-      }
-    });
-
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, matBindGroup);
-    pass.setBindGroup(1, sceneBindGroup);
-    pass.setVertexBuffer(0, this.vertexBuffer!);
-    pass.setIndexBuffer(this.indexBuffer!, 'uint16');
-    pass.drawIndexed(this.indexCount);
-    pass.end();
-
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    // Request next frame if not destroyed
-    if (!this.isDestroyed) {
-      requestAnimationFrame(this.renderLoop);
-    }
+    // Renderizar mundo aislado en el visor offscreen
+    this.renderer.render(
+      this.world,
+      targetView,
+      this.canvas.width,
+      this.canvas.height,
+      this.previewCamera
+    );
   }
 
   public destroy() {
-    this.isDestroyed = true;
-    this.isRendering = false;
-    this.vertexBuffer?.destroy();
-    this.indexBuffer?.destroy();
-    this.materialUniformBuffer?.destroy();
-    this.sceneUniformBuffer?.destroy();
-    this.fallbackWhiteTexture?.destroy();
-    this.fallbackFlatNormalTexture?.destroy();
-    this.dummyShadowTexture?.destroy();
-    this.depthTexture?.destroy();
-    this.fallbackHDRTexture?.destroy();
+    // En una implementación completa, aquí limpiaríamos el mundo del motor
+    console.log("[MaterialPreviewer] Visor de material destruido.");
   }
 }
