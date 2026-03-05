@@ -157,15 +157,12 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let hdrSpecColor = textureLoad(envMap, vec2<u32>(texelX_Spec, texelY_Spec), 0u).rgb;
 
     let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
-    
-    // Factor de atenuación: Los metales reflejan el 100% del HDRI, 
-    // los no-metales (madera/plástico) solo una fracción muy pequeña y difusa.
-    let iblReduction = mix(0.15, 1.0, uniforms.metallic); 
 
-    // Suavizado por rugosidad
-    let roughnessFree = 1.0 - finalRoughness;
-
-    let ambientReflection = F_ambient * hdrSpecColor * roughnessFree * iblReduction;
+    // Si el material NO es metálico, reducimos el reflejo especular al mínimo (4%) 
+    // y lo atenuamos drásticamente para que no parezca metal.
+    let iblFactor = mix(0.04, 1.0, uniforms.metallic); 
+    // let ambientReflection = F_ambient * hdrSpecColor * (1.0 - finalRoughness) * iblFactor;
+    let ambientReflection = vec3<f32>(0.0);
 
     // B) Iluminación Difusa Ambiental (Usando vector N en el HDRI)
     var uvEnvDiff = vec2<f32>(atan2(N.z, N.x), asin(N.y));
@@ -174,21 +171,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let texelY_Diff = u32(clamp((1.0 - uvEnvDiff.y) * envDims.y, 0.0, envDims.y - 1.0));
     let hdrDiffColor = textureLoad(envMap, vec2<u32>(texelX_Diff, texelY_Diff), 0u).rgb;
 
-    // Asegúrate de que el diffuse ambiental sea más sutil para no lavar el color
-    let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic) * 0.4;
+    let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic) * 1.2;
 
     let ambient = ambientDiffuse + ambientReflection;
     let color = ambient + directLighting;
 
-    // 3. COLOR GRADING FINAL NEUTRO Y CODIFICACIÓN GAMMA
-    let exposure = 1.0; 
-    let exposedColor = color * exposure;
+    // Ve al final de fs_main y antes del return, fuerza que el color sea solo Albedo + Luz Directa simple:
+    let finalAmbient = diffuseColor * 0.1; // Un poco de luz base
+    let debugColor = directLighting + (diffuseColor * 0.5);
 
-    let mappedColor = clamp(exposedColor, vec3<f32>(0.0), vec3<f32>(1.0));
-    
-    // Volver a aplicar el filtro sRGB para el monitor
-    let gamma = 2.2;
-    let gammaCorrected = pow(mappedColor, vec3<f32>(1.0 / gamma));
-    
-    return vec4<f32>(gammaCorrected, uniforms.baseColor.a * rawTexColor.a);
+    // Aplica el gamma normal
+    return vec4<f32>(pow(clamp(debugColor, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2)), uniforms.baseColor.a * rawTexColor.a);
 }

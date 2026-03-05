@@ -29,6 +29,7 @@ export class MaterialPreviewer {
 
   private envTexture: GPUTexture | null = null;
   private fallbackHDRTexture: GPUTexture;
+  private internalFallbackTexture: GPUTexture | null = null;
 
   private materialUniformBuffer: GPUBuffer | null = null;
   private sceneUniformBuffer: GPUBuffer | null = null;
@@ -98,6 +99,12 @@ export class MaterialPreviewer {
 
     this.initGeometry();
     this.initPipeline();
+
+    this.internalFallbackTexture = this.device.createTexture({
+      size: [1, 1, 1],
+      format: 'rgba32float',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
 
     this.depthTexture = this.device.createTexture({
       size: [256, 256],
@@ -255,10 +262,9 @@ export class MaterialPreviewer {
 
   public async loadEnvironment() {
     try {
-      // Fetch from Vite dev server (public folder)
+      // this.loadEnvironment(); // Desactivado temporalmente
       const response = await fetch('/environments/pretoria_gardens_1k.hdr');
-      if (!response.ok) throw new Error("HDRI not found on web server.");
-
+      if (!response.ok) throw new Error("HDRI no encontrado");
       const buffer = await response.arrayBuffer();
 
       const { RGBELoader } = await import('../Core/Resources/RGBELoader');
@@ -266,7 +272,7 @@ export class MaterialPreviewer {
 
       this.envTexture = this.device.createTexture({
         size: [hdrData.width, hdrData.height, 1],
-        format: 'rgba32float', // High Dynamic Range format
+        format: 'rgba32float',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
       });
 
@@ -276,9 +282,8 @@ export class MaterialPreviewer {
         { bytesPerRow: hdrData.width * 16, rowsPerImage: hdrData.height },
         [hdrData.width, hdrData.height, 1]
       );
-
     } catch (e) {
-      console.error("MaterialPreviewer: Error loading internal HDRI", e);
+      console.error("Error cargando HDRI del editor:", e);
     }
   }
 
@@ -339,8 +344,8 @@ export class MaterialPreviewer {
 
     // Scene Data (Restauramos la luz frontal para revivir el color difuso)
     const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([0.0, 0.0, 1.0, 0.0], 0); // Luz que viene desde la cámara (+Z hacia -Z)
-    sceneData.set([3.0, 3.0, 3.0, 1.0], 4); // Luz blanca con intensidad 3.0
+    sceneData.set([0, 1, 1, 0], 0);       // Luz desde arriba-frente
+    sceneData.set([1.0, 1.0, 1.0, 1], 4); // Intensidad normal 1.0
     sceneData.set(mat4.create(), 8);   // lightVP (dummy)
     sceneData.set([0, 0, 3.2, 1], 24); // Cámara
     sceneData.set(mat4.create(), 28);  // invVP (dummy)
@@ -364,7 +369,7 @@ export class MaterialPreviewer {
         { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
         { binding: 1, resource: this.dummyShadowTexture.createView() },
         { binding: 2, resource: this.shadowSampler },
-        { binding: 3, resource: this.envTexture ? this.envTexture.createView() : this.fallbackHDRTexture.createView() }
+        { binding: 3, resource: (this.envTexture ? this.envTexture : this.internalFallbackTexture!).createView() }
       ]
     });
 
