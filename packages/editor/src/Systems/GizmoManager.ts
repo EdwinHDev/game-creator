@@ -1,6 +1,7 @@
 import {
   EventBus, AActor, quat, vec3, mat4, World, Engine,
-  getRayFromCamera, intersectRayPlane, UMeshComponent, UDirectionalLightComponent
+  getRayFromCamera, intersectRayPlane, UMeshComponent, UDirectionalLightComponent,
+  UCameraComponent
 } from '@game-creator/engine';
 
 /**
@@ -77,136 +78,62 @@ export class GizmoManager {
     }
   }
 
-  public onMouseDown(e: MouseEvent, canvas: HTMLCanvasElement): void {
-    if (e.button !== 0 || !this._selectedActor || !this._selectedActor.rootComponent) return;
+  public async onMouseDown(e: MouseEvent, canvas: HTMLCanvasElement): Promise<void> {
+    if (e.button !== 0 || !this._selectedActor || !this._selectedActor.rootComponent || !this._world) return;
 
     const engine = Engine.getInstance();
     const renderer = engine.getRenderer();
-    const viewProj = renderer.viewProjMatrix;
 
-    const { width, height } = canvas;
-    const ray = getRayFromCamera(e.offsetX, e.offsetY, width, height, viewProj);
+    // 1. Get Mouse Coordinates
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
-    const pos = this._selectedActor.rootComponent.relativeLocation;
-    const rot = this._selectedActor.rootComponent.relativeRotation;
+    // 2. Find active camera
+    const cameraActor = this._world.actors.find(a => a.getComponent(UCameraComponent));
+    const mainCamera = cameraActor?.getComponent(UCameraComponent);
+    if (!mainCamera) return;
 
-    const scaleFactor = this.calculateScaleFactor(pos);
-
-    // Phase 20.4: Handle Solar Handle Click (PRIORITY & PERSISTENT)
-    const light = this._selectedActor.getComponent(UDirectionalLightComponent);
-    if (light) {
-      const handlePos = vec3.create();
-      const forward = light.getForwardVector();
-      // Length changed from 10.0 to 3.0
-      vec3.scaleAndAdd(handlePos, pos, forward, 3.0 * scaleFactor);
-
-      const sphereRadius = 0.12 * scaleFactor; // Calibrated hitbox for small sphere
-      const L = vec3.create(); vec3.subtract(L, handlePos, ray.origin);
-      const tca = vec3.dot(L, ray.direction);
-      const d2 = vec3.dot(L, L) - tca * tca;
-      if (d2 < sphereRadius * sphereRadius && tca > 0) {
-        this.isDraggingSolarHandle = true;
-        this.dragAxis = null;
-        this.isDraggingGizmo = false;
-        return;
-      }
-    }
-
-    const gizmoSize = 1.0 * scaleFactor;
-    const hitThreshold = 0.08 * scaleFactor;
-
-    const axes = [
-      { dir: vec3.fromValues(1, 0, 0), axis: 'X' as const },
-      { dir: vec3.fromValues(0, 1, 0), axis: 'Y' as const },
-      { dir: vec3.fromValues(0, 0, 1), axis: 'Z' as const },
-    ];
+    // 3. GPU ID Picking
+    const gizmoId = await renderer.getGizmoIdAt(mouseX, mouseY, this._world, mainCamera);
 
     let bestAxis: 'X' | 'Y' | 'Z' | null = null;
-    let closestDist = Infinity;
-
-    if (this.currentTransformMode === 'rotate') {
-      // Phase 35.5.1: Synchronize hit radius with visual radius (1.1)
-      const baseRadius = 1.1; // Debe coincidir con el radio de createCircle
-      const radius = baseRadius * scaleFactor;
-
-      // Grosor del anillo de detección calibrado para que sea fácil clickear (aprox 10% del radio)
-      const ringThreshold = 0.12 * scaleFactor;
-
-      for (const a of axes) {
-        const planeNormal = vec3.create();
-        if (this.transformSpace === 'local') {
-          vec3.transformQuat(planeNormal, a.dir, rot);
-        } else {
-          vec3.copy(planeNormal, a.dir);
-        }
-
-        const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
-        if (hit) {
-          const distFromCenter = vec3.distance(hit, pos);
-          const diff = Math.abs(distFromCenter - radius);
-          if (diff < ringThreshold && diff < closestDist) {
-            closestDist = diff;
-            bestAxis = a.axis;
-            vec3.subtract(this.dragStartVector, hit, pos);
-            vec3.copy(this.dragStartMouseHit, hit);
-          }
-        }
-      }
-    } else {
-      for (const a of axes) {
-        const worldDir = vec3.create();
-        if (this.transformSpace === 'local') {
-          vec3.transformQuat(worldDir, a.dir, rot);
-        } else {
-          vec3.copy(worldDir, a.dir);
-        }
-
-        const u = worldDir;
-        const v = ray.direction;
-        const w0 = vec3.create();
-        vec3.subtract(w0, pos, ray.origin);
-
-        const b = vec3.dot(u, v);
-        const d = vec3.dot(u, w0);
-        const e = vec3.dot(v, w0);
-
-        const denom = 1.0 - b * b;
-        let sc, tc;
-
-        if (denom < 0.0001) {
-          sc = -d; tc = 0.0;
-        } else {
-          sc = (b * e - d) / denom;
-          tc = (e - b * d) / denom;
-        }
-
-        sc = Math.max(0, Math.min(sc, gizmoSize));
-
-        const P_axis = vec3.create();
-        vec3.scaleAndAdd(P_axis, pos, worldDir, sc);
-        const P_ray = vec3.create();
-        vec3.scaleAndAdd(P_ray, ray.origin, ray.direction, tc);
-
-        const distHit = vec3.distance(P_axis, P_ray);
-
-        if (distHit < hitThreshold && distHit < closestDist) {
-          closestDist = distHit;
-          bestAxis = a.axis;
-        }
-      }
-    }
+    if (gizmoId === 1) bestAxis = 'X';
+    else if (gizmoId === 2) bestAxis = 'Y';
+    else if (gizmoId === 3) bestAxis = 'Z';
 
     if (bestAxis) {
       this.isDraggingGizmo = true;
       this.dragAxis = bestAxis;
+      const pos = this._selectedActor.rootComponent.relativeLocation;
       vec3.copy(this.dragStartActorPos, pos);
       vec3.copy(this.dragStartActorScale, this._selectedActor.rootComponent.relativeScale);
       quat.copy(this.dragStartActorRotation, this._selectedActor.rootComponent.relativeRotation);
+
+      // Initialize drag start hit point for calculations in onMouseMove
+      const width = canvas.width;
+      const height = canvas.height;
+      const viewProj = renderer.viewProjMatrix;
+      const ray = getRayFromCamera(mouseX, mouseY, width, height, viewProj);
 
       if (this.currentTransformMode !== 'rotate') {
         const planeNormal = this.getDragPlaneNormal(bestAxis);
         const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
         if (hit) {
+          vec3.copy(this.dragStartMouseHit, hit);
+        }
+      } else {
+        // For rotation, initialize drag start vector from center to hit point
+        const worldAxis = vec3.create();
+        const axisDir = vec3.fromValues(bestAxis === 'X' ? 1 : 0, bestAxis === 'Y' ? 1 : 0, bestAxis === 'Z' ? 1 : 0);
+        if (this.transformSpace === 'local') {
+          vec3.transformQuat(worldAxis, axisDir, this.dragStartActorRotation);
+        } else {
+          vec3.copy(worldAxis, axisDir);
+        }
+        const hit = intersectRayPlane(ray.origin, ray.direction, pos, worldAxis);
+        if (hit) {
+          vec3.subtract(this.dragStartVector, hit, pos);
           vec3.copy(this.dragStartMouseHit, hit);
         }
       }
@@ -435,13 +362,18 @@ export class GizmoManager {
       const mesh = actor.addComponent(UMeshComponent);
       actor.rootComponent = mesh;
       if (!isTip) {
-        if (this.currentTransformMode === 'rotate') mesh.createCircle(device, 1.1, 64, color, name.split('_')[1] as any);
-        else mesh.createGizmoAxis(device, 1.0, color);
+        if (this.currentTransformMode === 'rotate') {
+          // Fallback to Sphere for now until Torus/Circle is added
+          mesh.setPrimitive('Primitive_Sphere');
+          vec3.set(mesh.relativeScale, 1.1, 1.1, 0.05); // Flattened sphere as circle proxy
+        } else {
+          mesh.setPrimitive('Primitive_Cylinder');
+        }
       } else {
-        if (this.currentTransformMode === 'translate') mesh.createPyramid(device, 0.15, 0.05, color);
-        else if (this.currentTransformMode === 'scale') {
-          // Phase 35.5.2: Replace hollow lines with solid filled cubes
-          mesh.createSolidGizmoCube(device, 0.5, color);
+        if (this.currentTransformMode === 'translate') {
+          mesh.setPrimitive('Primitive_Cone');
+        } else if (this.currentTransformMode === 'scale') {
+          mesh.setPrimitive('Primitive_Cube');
           vec3.set(mesh.relativeScale, 0.085, 0.085, 0.085);
         }
         if (mesh.material) {
@@ -472,7 +404,7 @@ export class GizmoManager {
       this.lightDirectionGizmo.rootComponent = mesh;
       const lightCol = [1.0, 0.9, 0.2];
       // Length changed to 3.0
-      mesh.createGizmoAxis(device, 3.0, lightCol);
+      mesh.setPrimitive('Primitive_Cylinder');
       mesh.isGizmo = true;
       mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
 
@@ -480,7 +412,7 @@ export class GizmoManager {
       const tipMesh = this.lightDirectionTip.addComponent(UMeshComponent);
       this.lightDirectionTip.rootComponent = tipMesh;
       // Phase 34.6: Use lightweight gizmo sphere geometry
-      tipMesh.createGizmoSphere(device, 0.05, 16, lightCol);
+      tipMesh.setPrimitive('Primitive_Sphere');
       if (tipMesh.material) {
         tipMesh.material.baseColor = new Float32Array([...lightCol, 1.0]);
       }

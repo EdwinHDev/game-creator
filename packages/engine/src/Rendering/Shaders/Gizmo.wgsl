@@ -1,6 +1,7 @@
 struct Uniforms {
     mvpMatrix: mat4x4<f32>,
     color: vec4<f32>,
+    axisId: f32,
 }
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -19,5 +20,8 @@ fn vs_main(@location(0) pos: vec3<f32>) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    if (uniforms.axisId > 0.5) {
+        return vec4<f32>(uniforms.axisId / 255.0, 0.0, 0.0, 1.0);
+    }
     return in.color;
 }

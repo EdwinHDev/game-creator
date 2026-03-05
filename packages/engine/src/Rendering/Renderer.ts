@@ -42,6 +42,8 @@ export class Renderer {
   private format: GPUTextureFormat = 'bgra8unorm';
   private depthTexture: GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
+  private pickingTexture: GPUTexture | null = null;
+  private pickingBuffer: GPUBuffer | null = null;
 
   private skyPipeline: GPURenderPipeline | null = null;
   private trianglePipeline: GPURenderPipeline | null = null;
@@ -82,6 +84,17 @@ export class Renderer {
     this.context = canvas.getContext('webgpu');
     this.format = navigator.gpu.getPreferredCanvasFormat();
     this.context!.configure({ device: this.device, format: this.format, alphaMode: 'opaque' });
+
+    this.pickingTexture = this.device.createTexture({
+      size: [1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+
+    this.pickingBuffer = this.device.createBuffer({
+      size: 256,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
 
     // --- FALLBACK TEXTURES (Phase 58.3 Fix: Create these BEFORE bind groups) ---
     this.fallbackWhiteTexture = this.device.createTexture({
@@ -645,7 +658,7 @@ export class Renderer {
     pass.setVertexBuffer(0, component.vertexBuffer!); pass.draw(component.vertexCount);
   }
 
-  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array) {
+  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array, axisId: number = 0) {
     const pipeline = this.gizmoTriangleOverlayPipeline;
     if (!pipeline) return;
 
@@ -653,11 +666,12 @@ export class Renderer {
     const model = component.getWorldMatrix();
     mat4.multiply(mvp, viewProj, model);
 
-    // Uniforms: MVP (64) + Color (16) = 80 bytes
-    const buffer = this.getOrCreateUniformBuffer(`${component.id}_gizmo`, 80);
-    const data = new Float32Array(20); // 16 for mat4, 4 for vec4
+    // Uniforms: MVP (64) + Color (16) + axisId (4) + padding (12) = 96 bytes
+    const buffer = this.getOrCreateUniformBuffer(`${component.id}_gizmo`, 96);
+    const data = new Float32Array(24);
     data.set(mvp as any, 0);
     data.set(color, 16);
+    data[20] = axisId;
     this.device!.queue.writeBuffer(buffer, 0, data);
 
     const bindGroup = this.getOrCreateBindGroup(`${component.id}_gizmo_bg`, pipeline.getBindGroupLayout(0), [
@@ -705,6 +719,74 @@ export class Renderer {
       this.bindGroups.set(key, bindGroup);
     }
     return bindGroup;
+  }
+
+  public async getGizmoIdAt(mouseX: number, mouseY: number, world: World, camera: UCameraComponent): Promise<number> {
+    if (!this.device || !this.pickingTexture || !this.pickingBuffer) return 0;
+
+    const canvas = this.context!.canvas as HTMLCanvasElement;
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Normalized Device Coordinates [-1, 1]
+    const ndcX = (mouseX / width) * 2 - 1;
+    const ndcY = 1 - (mouseY / height) * 2;
+
+    const jitterMat = mat4.create();
+    mat4.fromTranslation(jitterMat, [-ndcX, -ndcY, 0]);
+    mat4.scale(jitterMat, jitterMat, [width, height, 1]);
+
+    const viewProj = mat4.create();
+    const projection = camera.getProjectionMatrix(width / height);
+    const view = camera.getViewMatrix();
+    mat4.multiply(viewProj, projection, view);
+    mat4.multiply(viewProj, jitterMat, viewProj);
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [{
+        view: this.pickingTexture.createView(),
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store'
+      }],
+      depthStencilAttachment: {
+        view: this.depthTextureView!,
+        depthClearValue: 1.0,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store'
+      }
+    });
+
+    for (const actor of world.actors) {
+      if (actor.bIsHidden || !actor.hasTag('Gizmo')) continue;
+      for (const component of actor.components) {
+        if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
+          let axisId = 0;
+          if (component.name.includes('X_')) axisId = 1;
+          else if (component.name.includes('Y_')) axisId = 2;
+          else if (component.name.includes('Z_')) axisId = 3;
+
+          this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId);
+        }
+      }
+    }
+    pass.end();
+
+    encoder.copyTextureToBuffer(
+      { texture: this.pickingTexture },
+      { buffer: this.pickingBuffer, bytesPerRow: 256 },
+      [1, 1, 1]
+    );
+
+    this.device.queue.submit([encoder.finish()]);
+
+    await this.pickingBuffer.mapAsync(GPUMapMode.READ);
+    const result = new Uint8Array(this.pickingBuffer.getMappedRange());
+    const id = result[0]; // R channel
+    this.pickingBuffer.unmap();
+
+    return id;
   }
 
   public getDevice(): GPUDevice | null { return this.device; }
