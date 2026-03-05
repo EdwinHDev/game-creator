@@ -78,6 +78,8 @@ export class UAssetManager {
         vertices.push(x, y, z);
         // UV
         vertices.push(lon / segments, lat / segments);
+        // Tangent
+        vertices.push(-sinPhi, 0, cosPhi, 1.0);
       }
     }
 
@@ -109,9 +111,9 @@ export class UAssetManager {
       const u = i / segments;
 
       // Bottom side vertex
-      vertices.push(x * radius, -height / 2, z * radius, x, 0, z, u, 1);
+      vertices.push(x * radius, -height / 2, z * radius, x, 0, z, u, 1, -z, 0, x, 1);
       // Top side vertex
-      vertices.push(x * radius, height / 2, z * radius, x, 0, z, u, 0);
+      vertices.push(x * radius, height / 2, z * radius, x, 0, z, u, 0, -z, 0, x, 1);
     }
 
     // Side indices
@@ -122,24 +124,28 @@ export class UAssetManager {
     }
 
     // 2. Bottom Cap
-    const bottomCenterIndex = vertices.length / 8;
-    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5);
-    const bottomRingStart = vertices.length / 8;
+    const bottomCenterIndex = vertices.length / 12;
+    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5, 1, 0, 0, 1);
+    const bottomRingStart = vertices.length / 12;
     for (let i = 0; i <= segments; i++) {
       const theta = (i / segments) * 2 * Math.PI;
-      vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius, 0, -1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+      const x = Math.cos(theta);
+      const z = Math.sin(theta);
+      vertices.push(x * radius, -height / 2, z * radius, 0, -1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
       indices.push(bottomCenterIndex, bottomRingStart + i + 1, bottomRingStart + i);
     }
 
     // 3. Top Cap
-    const topCenterIndex = vertices.length / 8;
-    vertices.push(0, height / 2, 0, 0, 1, 0, 0.5, 0.5);
-    const topRingStart = vertices.length / 8;
+    const topCenterIndex = vertices.length / 12;
+    vertices.push(0, height / 2, 0, 0, 1, 0, 0.5, 0.5, 1, 0, 0, 1);
+    const topRingStart = vertices.length / 12;
     for (let i = 0; i <= segments; i++) {
       const theta = (i / segments) * 2 * Math.PI;
-      vertices.push(Math.cos(theta) * radius, height / 2, Math.sin(theta) * radius, 0, 1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+      const x = Math.cos(theta);
+      const z = Math.sin(theta);
+      vertices.push(x * radius, height / 2, z * radius, 0, 1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
       indices.push(topCenterIndex, topRingStart + i, topRingStart + i + 1);
@@ -169,9 +175,9 @@ export class UAssetManager {
       const mag = Math.sqrt(nx * nx + ny * ny + nz * nz);
 
       // Bottom edge
-      vertices.push(x * radius, -height / 2, z * radius, nx / mag, ny / mag, nz / mag, u, 1);
+      vertices.push(x * radius, -height / 2, z * radius, nx / mag, ny / mag, nz / mag, u, 1, -z, 0, x, 1);
       // Tip (one vertex per segment for correct normals/UV)
-      vertices.push(0, height / 2, 0, nx / mag, ny / mag, nz / mag, u, 0);
+      vertices.push(0, height / 2, 0, nx / mag, ny / mag, nz / mag, u, 0, -z, 0, x, 1);
     }
 
     for (let i = 0; i < segments; i++) {
@@ -180,12 +186,14 @@ export class UAssetManager {
     }
 
     // 2. Base Cap (Bottom)
-    const centerIndex = vertices.length / 8;
-    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5);
-    const ringStart = vertices.length / 8;
+    const centerIndex = vertices.length / 12;
+    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5, 1, 0, 0, 1);
+    const ringStart = vertices.length / 12;
     for (let i = 0; i <= segments; i++) {
       const theta = (i / segments) * 2 * Math.PI;
-      vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius, 0, -1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+      const x = Math.cos(theta);
+      const z = Math.sin(theta);
+      vertices.push(x * radius, -height / 2, z * radius, 0, -1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
       indices.push(centerIndex, ringStart + i + 1, ringStart + i);
@@ -227,6 +235,7 @@ export class UAssetManager {
         vertices.push(x * radius, (y * radius) + yOffset, z * radius);
         vertices.push(x, y, z);
         vertices.push(lon / segments, lat / latEnd);
+        vertices.push(-sinPhi, 0, cosPhi, 1.0);
       }
     }
 
@@ -246,36 +255,36 @@ export class UAssetManager {
     // A standard 1.0 unit cube centered at (0,0,0)
     // Layout: Position (3f), Normal (3f), UV (2f) - 24 vertices
     const vertices = new Float32Array([
-      // Front face (Normal Z+)
-      -0.5, -0.5, 0.5, 0, 0, 1, 0, 1,
-      0.5, -0.5, 0.5, 0, 0, 1, 1, 1,
-      0.5, 0.5, 0.5, 0, 0, 1, 1, 0,
-      -0.5, 0.5, 0.5, 0, 0, 1, 0, 0,
-      // Back face (Normal Z-)
-      -0.5, -0.5, -0.5, 0, 0, -1, 1, 1,
-      -0.5, 0.5, -0.5, 0, 0, -1, 1, 0,
-      0.5, 0.5, -0.5, 0, 0, -1, 0, 0,
-      0.5, -0.5, -0.5, 0, 0, -1, 0, 1,
-      // Top face (Normal Y+)
-      -0.5, 0.5, -0.5, 0, 1, 0, 0, 0,
-      -0.5, 0.5, 0.5, 0, 1, 0, 0, 1,
-      0.5, 0.5, 0.5, 0, 1, 0, 1, 1,
-      0.5, 0.5, -0.5, 0, 1, 0, 1, 0,
-      // Bottom face (Normal Y-)
-      -0.5, -0.5, -0.5, 0, -1, 0, 0, 1,
-      0.5, -0.5, -0.5, 0, -1, 0, 1, 1,
-      0.5, -0.5, 0.5, 0, -1, 0, 1, 0,
-      -0.5, -0.5, 0.5, 0, -1, 0, 0, 0,
-      // Right face (Normal X+)
-      0.5, -0.5, -0.5, 1, 0, 0, 1, 1,
-      0.5, 0.5, -0.5, 1, 0, 0, 1, 0,
-      0.5, 0.5, 0.5, 1, 0, 0, 0, 0,
-      0.5, -0.5, 0.5, 1, 0, 0, 0, 1,
-      // Left face (Normal X-)
-      -0.5, -0.5, -0.5, -1, 0, 0, 0, 1,
-      -0.5, -0.5, 0.5, -1, 0, 0, 1, 1,
-      -0.5, 0.5, 0.5, -1, 0, 0, 1, 0,
-      -0.5, 0.5, -0.5, -1, 0, 0, 0, 0,
+      // Front face (Normal Z+) -> Tangent X+
+      -0.5, -0.5, 0.5, 0, 0, 1, 0, 1, 1, 0, 0, 1,
+      0.5, -0.5, 0.5, 0, 0, 1, 1, 1, 1, 0, 0, 1,
+      0.5, 0.5, 0.5, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+      -0.5, 0.5, 0.5, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+      // Back face (Normal Z-) -> Tangent X-
+      -0.5, -0.5, -0.5, 0, 0, -1, 1, 1, -1, 0, 0, 1,
+      -0.5, 0.5, -0.5, 0, 0, -1, 1, 0, -1, 0, 0, 1,
+      0.5, 0.5, -0.5, 0, 0, -1, 0, 0, -1, 0, 0, 1,
+      0.5, -0.5, -0.5, 0, 0, -1, 0, 1, -1, 0, 0, 1,
+      // Top face (Normal Y+) -> Tangent X+
+      -0.5, 0.5, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -0.5, 0.5, 0.5, 0, 1, 0, 0, 1, 1, 0, 0, 1,
+      0.5, 0.5, 0.5, 0, 1, 0, 1, 1, 1, 0, 0, 1,
+      0.5, 0.5, -0.5, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+      // Bottom face (Normal Y-) -> Tangent X+
+      -0.5, -0.5, -0.5, 0, -1, 0, 0, 1, 1, 0, 0, 1,
+      0.5, -0.5, -0.5, 0, -1, 0, 1, 1, 1, 0, 0, 1,
+      0.5, -0.5, 0.5, 0, -1, 0, 1, 0, 1, 0, 0, 1,
+      -0.5, -0.5, 0.5, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      // Right face (Normal X+) -> Tangent Z-
+      0.5, -0.5, -0.5, 1, 0, 0, 1, 1, 0, 0, -1, 1,
+      0.5, 0.5, -0.5, 1, 0, 0, 1, 0, 0, 0, -1, 1,
+      0.5, 0.5, 0.5, 1, 0, 0, 0, 0, 0, 0, -1, 1,
+      0.5, -0.5, 0.5, 1, 0, 0, 0, 1, 0, 0, -1, 1,
+      // Left face (Normal X-) -> Tangent Z+
+      -0.5, -0.5, -0.5, -1, 0, 0, 0, 1, 0, 0, 1, 1,
+      -0.5, -0.5, 0.5, -1, 0, 0, 1, 1, 0, 0, 1, 1,
+      -0.5, 0.5, 0.5, -1, 0, 0, 1, 0, 0, 0, 1, 1,
+      -0.5, 0.5, -0.5, -1, 0, 0, 0, 0, 0, 0, 1, 1,
     ]);
 
     const indices = new Uint32Array([
@@ -292,11 +301,12 @@ export class UAssetManager {
 
   private createPlanePrimitive(device: GPUDevice) {
     // A standard 1.0 unit plane on XZ axis
+    // Layout: Position (3f), Normal (3f), UV (2f), Tangent (4f)
     const vertices = new Float32Array([
-      -0.5, 0, -0.5, 0, 1, 0, 0, 0,
-      0.5, 0, -0.5, 0, 1, 0, 1, 0,
-      0.5, 0, 0.5, 0, 1, 0, 1, 1,
-      -0.5, 0, 0.5, 0, 1, 0, 0, 1
+      -0.5, 0, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      0.5, 0, -0.5, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+      0.5, 0, 0.5, 0, 1, 0, 1, 1, 1, 0, 0, 1,
+      -0.5, 0, 0.5, 0, 1, 0, 0, 1, 1, 0, 0, 1
     ]);
     const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
     this.assets.set('Primitive_Plane', new UAsset('Primitive_Plane', device, vertices, indices));

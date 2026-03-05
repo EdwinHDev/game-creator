@@ -413,7 +413,7 @@ export class Renderer {
           pass.setBindGroup(0, bindGroup);
           pass.setVertexBuffer(0, component.vertexBuffer);
           if (component.indexBuffer) {
-            pass.setIndexBuffer(component.indexBuffer, 'uint16');
+            pass.setIndexBuffer(component.indexBuffer, 'uint32');
             pass.drawIndexed(component.indexCount);
           } else {
             pass.draw(component.vertexCount);
@@ -554,7 +554,12 @@ export class Renderer {
     pass.setPipeline(this.trianglePipeline);
     pass.setBindGroup(0, bindGroup); pass.setBindGroup(1, this.sceneBindGroup);
     pass.setVertexBuffer(0, component.vertexBuffer!);
-    if (component.indexBuffer) { pass.setIndexBuffer(component.indexBuffer, 'uint16'); pass.drawIndexed(component.indexCount); } else { pass.draw(component.vertexCount); }
+    if (component.indexBuffer) {
+      pass.setIndexBuffer(component.indexBuffer, 'uint32');
+      pass.drawIndexed(component.indexCount);
+    } else {
+      pass.draw(component.vertexCount);
+    }
     if (isSelected && this.outlinePipeline) { pass.setPipeline(this.outlinePipeline); pass.drawIndexed(component.indexCount); }
   }
 
@@ -581,7 +586,12 @@ export class Renderer {
     const bindGroup = this.getOrCreateBindGroup(component.id, pipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
     pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup);
     pass.setVertexBuffer(0, component.vertexBuffer!);
-    if (component.indexBuffer) { pass.setIndexBuffer(component.indexBuffer, 'uint16'); pass.drawIndexed(component.indexCount); } else { pass.draw(component.vertexCount); }
+    if (component.indexBuffer) {
+      pass.setIndexBuffer(component.indexBuffer, 'uint32');
+      pass.drawIndexed(component.indexCount);
+    } else {
+      pass.draw(component.vertexCount);
+    }
   }
 
   private renderBillboard(pass: GPURenderPassEncoder, light: UDirectionalLightComponent, camera: UCameraComponent, aspect: number) {
