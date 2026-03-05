@@ -89,30 +89,29 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    // Phase 29.1 / 33.1: Texture Retrieval
-    let texColor = textureSample(albedoMap, baseColorSampler, in.uv);
+    // 1. LECTURA DE TEXTURAS Y DECODIFICACIÓN sRGB -> LINEAR (CRÍTICO PARA COLOR VIVO)
+    let rawTexColor = textureSample(albedoMap, baseColorSampler, in.uv);
+    // Quitar filtro sRGB a la textura para matemática pura
+    let albedoLinear = pow(rawTexColor.rgb, vec3<f32>(2.2)); 
+    
     let texRoughness = textureSample(roughnessMap, baseColorSampler, in.uv).r;
     
-    // Phase 34.1: Anti-NaN Shield
     var N = normalize(in.normal);
-
-    // 1. Lectura uniforme para TODOS los píxeles (Requisito estricto de WebGPU)
     let mapNormal = textureSample(normalMap, baseColorSampler, in.uv).rgb;
     let localNormal = mapNormal * 2.0 - 1.0;
 
-    // Solo calculamos el relieve si la tangente existe y no es cero
     if (length(in.tangent.xyz) > 0.001) {
         let T = normalize(in.tangent.xyz);
         let B = normalize(cross(N, T)) * in.tangent.w;
         let TBN = mat3x3<f32>(T, B, N);
-        
-        // Si no es la textura dummy plana
-        if (length(localNormal) > 0.01) { 
-            N = normalize(TBN * localNormal); // <- Sobreescribimos la variable N aquí
+        if (length(localNormal) > 0.01) {
+            N = normalize(TBN * localNormal);
         }
     }
     
-    let diffuseColor = uniforms.baseColor.rgb * texColor.rgb;
+    // Quitar filtro sRGB al color base seleccionado en el panel UI
+    let baseColorLinear = pow(uniforms.baseColor.rgb, vec3<f32>(2.2));
+    let diffuseColor = baseColorLinear * albedoLinear;
     let finalRoughness = uniforms.roughness * texRoughness;
 
     let cameraPos = scene.cameraPosition.xyz;
@@ -122,7 +121,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     // Cook-Torrance PBR
     var F0 = vec3<f32>(0.04);
-    // Phase 28: Using correct ambient F0 for metals (blended with new diffuse tracking)
     F0 = mix(F0, diffuseColor, uniforms.metallic);
 
     let NDF = DistributionGGX(N, H, finalRoughness);
@@ -137,77 +135,58 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
     let specular = numerator / denominator;
 
-    // Shadow Calculation
     let shadowCoords = in.shadowPos.xyz / in.shadowPos.w;
     let flipCorrect = vec2<f32>(0.5, -0.5);
     let posUV = shadowCoords.xy * flipCorrect + 0.5;
     let shadowVisibility = textureSampleCompare(shadowMap, shadowSampler, posUV, shadowCoords.z - 0.005);
 
     let NdotL = max(dot(N, L), 0.0);
-    
-    // Phase 30: Energy Conservation (Specular Gain Dampening)
-    // Reduce the intense 20.0 specular highlight dynamically as roughness increases.
     let specularGain = mix(20.0, 0.0, uniforms.roughness);
     let directLighting = (kD * diffuseColor / PI + specular * specularGain) * scene.lightColor.rgb * NdotL * shadowVisibility;
     
-    // Phase 26.1 / 31.3 / 32.1: Dynamic Sky IBL Calibration
-    // Desaturated fill colors bumped in brightness to prevent overly dark shadows
-    let sunY = scene.lightDirection.y;
-    var skyColor: vec3<f32>;
-    let groundColor = vec3<f32>(0.08, 0.08, 0.08); // Lighter ground bounce
-
-    if (sunY < -0.1) {
-        skyColor = vec3<f32>(0.2, 0.22, 0.25); // Desaturated but brighter blue day fill
-    } else if (sunY < 0.3) {
-        let t = (sunY + 0.1) / 0.4;
-        skyColor = mix(vec3<f32>(0.2, 0.22, 0.25), vec3<f32>(0.15, 0.10, 0.12), t); // Desaturated sunset
-    } else if (sunY < 0.6) {
-        let t = (sunY - 0.3) / 0.3;
-        skyColor = mix(vec3<f32>(0.15, 0.10, 0.12), vec3<f32>(0.02, 0.02, 0.03), t); // Dusk to night
-    } else {
-        skyColor = vec3<f32>(0.02, 0.02, 0.03); // Night fill
-    }
-
-    let upFactor = dot(N, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
-    let hemiLight = mix(groundColor, skyColor, upFactor);
-    
-    // Phase 28: Energy Conservation Polish
-    // Ambient base reflection (IBL)
-    let R = reflect(-V, N);
-    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
-
-    // Equirectangular Projection
+    // 2. IBL HDRI INTEGRADO (DIFUSO Y ESPECULAR)
+    let envDims = vec2<f32>(textureDimensions(envMap));
     let invAtan = vec2<f32>(0.1591, 0.3183);
-    var uvEnv = vec2<f32>(atan2(R.z, R.x), asin(R.y));
-    uvEnv = uvEnv * invAtan + 0.5;
 
-    let envDims = textureDimensions(envMap);
-    let texelX = clamp(i32(uvEnv.x * f32(envDims.x)), 0, i32(envDims.x) - 1);
-    let texelY = clamp(i32((1.0 - uvEnv.y) * f32(envDims.y)), 0, i32(envDims.y) - 1);
+    // A) Reflejo Especular (Usando vector R)
+    let R = reflect(-V, N);
+    var uvEnvSpec = vec2<f32>(atan2(R.z, R.x), asin(R.y));
+    uvEnvSpec = uvEnvSpec * invAtan + 0.5;
+    let texelX_Spec = u32(clamp(uvEnvSpec.x * envDims.x, 0.0, envDims.x - 1.0));
+    let texelY_Spec = u32(clamp((1.0 - uvEnvSpec.y) * envDims.y, 0.0, envDims.y - 1.0));
+    let hdrSpecColor = textureLoad(envMap, vec2<u32>(texelX_Spec, texelY_Spec), 0u).rgb;
 
-    let hdrColor = textureLoad(envMap, vec2<i32>(texelX, texelY), 0).rgb;
-
-    let ambientReflection = F_ambient * hdrColor;
-
-    // The core ambient illumination (Metals have 0 diffuse ambient)
-    let ambientDiffuse = hemiLight * diffuseColor * (1.0 - uniforms.metallic);
+    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
+    let roughnessAttenuation = 1.0 - finalRoughness;
     
-    // Phase 58.7: Removed 1.5x Multiplier to prevent overexposure
-    let ambient = ambientDiffuse + ambientReflection;
+    // TRUCO IBL: Si no es metálico, reducimos la fuerza del reflejo HDRI nítido 
+    // para simular la dispersión de luz de un material dieléctrico.
+    let specIntensity = mix(0.1, 1.0, uniforms.metallic); 
 
-    // Phase 30.1: Removed procedural sunDisk - purely relying on Cook-Torrance directLighting.
+    let ambientReflection = F_ambient * hdrSpecColor * roughnessAttenuation * specIntensity;
+
+    // B) Iluminación Difusa Ambiental (Usando vector N en el HDRI)
+    var uvEnvDiff = vec2<f32>(atan2(N.z, N.x), asin(N.y));
+    uvEnvDiff = uvEnvDiff * invAtan + 0.5;
+    let texelX_Diff = u32(clamp(uvEnvDiff.x * envDims.x, 0.0, envDims.x - 1.0));
+    let texelY_Diff = u32(clamp((1.0 - uvEnvDiff.y) * envDims.y, 0.0, envDims.y - 1.0));
+    let hdrDiffColor = textureLoad(envMap, vec2<u32>(texelX_Diff, texelY_Diff), 0u).rgb;
+
+    // Escalar la luz ambiente a la mitad para que no asfixie la textura
+    let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic);
+
+    let ambient = ambientDiffuse + ambientReflection;
     let color = ambient + directLighting;
 
-    // --- COLOR GRADING NEUTRO ---
+    // 3. COLOR GRADING FINAL NEUTRO Y CODIFICACIÓN GAMMA
     let exposure = 1.0; 
     let exposedColor = color * exposure;
 
-    // Clamp simple: Mantiene los tonos originales del HDRI sin desaturar los brillos hacia el blanco (como hace ACES)
     let mappedColor = clamp(exposedColor, vec3<f32>(0.0), vec3<f32>(1.0));
-
-    // Corrección Gamma estricta
+    
+    // Volver a aplicar el filtro sRGB para el monitor
     let gamma = 2.2;
     let gammaCorrected = pow(mappedColor, vec3<f32>(1.0 / gamma));
-
-    return vec4<f32>(gammaCorrected, uniforms.baseColor.a * texColor.a);
+    
+    return vec4<f32>(gammaCorrected, uniforms.baseColor.a * rawTexColor.a);
 }

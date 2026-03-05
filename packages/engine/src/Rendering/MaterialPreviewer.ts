@@ -325,16 +325,19 @@ export class MaterialPreviewer {
     matData.set(mvpMatrix, 0);
     matData.set(modelMatrix, 16);
     matData.set(this.currentMaterial.baseColor, 32);
-    matData[36] = this.currentMaterial.roughness;
+    // Ajuste de Roughness visual para el preview:
+    // Si el material es muy liso (0), le damos un mínimo de 0.05 para que no sea un espejo irreal
+    const visualRoughness = Math.max(this.currentMaterial.roughness, 0.05);
+    matData[36] = visualRoughness;
     matData[37] = this.currentMaterial.metallic;
     this.device.queue.writeBuffer(this.materialUniformBuffer!, 0, matData);
 
-    // Scene Data (Apagamos la luz falsa, el HDRI es la única fuente de luz ahora)
+    // Scene Data (Restauramos la luz frontal para revivir el color difuso)
     const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([-0.5, -1, 1, 0], 0); // direction
-    sceneData.set([0, 0, 0, 1], 4);     // color (light turned off)
+    sceneData.set([0.0, 0.0, 1.0, 0.0], 0); // Luz que viene desde la cámara (+Z hacia -Z)
+    sceneData.set([1.5, 1.5, 1.5, 1.0], 4); // Luz blanca con intensidad 1.5
     sceneData.set(mat4.create(), 8);   // lightVP (dummy)
-    sceneData.set([0, 0, 3.2, 1], 24); // cameraPosition
+    sceneData.set([0, 0, 3.2, 1], 24); // Cámara
     sceneData.set(mat4.create(), 28);  // invVP (dummy)
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
