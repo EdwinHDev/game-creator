@@ -47,7 +47,6 @@ export class Renderer {
   private trianglePipeline: GPURenderPipeline | null = null;
   private linePipeline: GPURenderPipeline | null = null;
   private outlinePipeline: GPURenderPipeline | null = null;
-  private gizmoOverlayPipeline: GPURenderPipeline | null = null;
   private gizmoTriangleOverlayPipeline: GPURenderPipeline | null = null;
   private billboardPipeline: GPURenderPipeline | null = null;
   private billboardQuadBuffer: GPUBuffer | null = null;
@@ -235,14 +234,6 @@ export class Renderer {
       vertex: { module: outlineModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: outlineModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
       primitive: { topology: 'triangle-list', cullMode: 'front' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
-    });
-
-    this.gizmoOverlayPipeline = this.device.createRenderPipeline({
-      layout: 'auto',
-      vertex: { module: gizmoModule, entryPoint: 'vs_main', buffers: colorVertexBuffers },
-      fragment: { module: gizmoModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
-      primitive: { topology: 'line-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
@@ -553,13 +544,6 @@ export class Renderer {
 
     for (const actor of world.actors) {
       if (actor.bIsHidden || !actor.hasTag('Gizmo')) continue;
-
-      // Lookdev dynamic scale update (optional if called from outside, but good for self-containment)
-      if ((actor as any).updateGizmoScale) {
-        const camPos = vec3.create();
-        mat4.getTranslation(camPos, mainCamera.owner.rootComponent!.getWorldMatrix());
-        (actor as any).updateGizmoScale(camPos);
-      }
 
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {

@@ -112,7 +112,9 @@ export class Engine {
         if (mainCamera && mainCamera.owner.rootComponent) {
           const camPos = vec3.create();
           mat4.getTranslation(camPos, mainCamera.owner.rootComponent.getWorldMatrix());
-          gizmoActor.updateGizmoScale(camPos, mainCamera.fov || 45);
+
+          const fovDegrees = (mainCamera.fov * 180) / Math.PI;
+          gizmoActor.updateGizmoScale(camPos, fovDegrees);
         }
       }
 
