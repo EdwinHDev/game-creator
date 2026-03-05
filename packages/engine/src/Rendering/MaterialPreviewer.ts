@@ -1,5 +1,6 @@
 import { mat4 } from 'gl-matrix';
 import { UMaterial } from './UMaterial';
+import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
 import standardShader from './Shaders/Standard.wgsl?raw';
 
 /**
@@ -342,10 +343,22 @@ export class MaterialPreviewer {
 
     this.device.queue.writeBuffer(this.materialUniformBuffer!, 0, matData);
 
-    // Scene Data (Restauramos la luz frontal para revivir el color difuso)
+    // Busca el componente de luz direccional en el mundo
+    const world = (this as any).renderer?.world; // Acceso temporal al world
+    const sun = world?.getComponents(UDirectionalLightComponent)[0];
+
+    const sunColor = sun ? sun.color : [1, 1, 1];
+    const sunIntensity = sun ? sun.intensity : 1.0;
+
+    // Scene Data (Actualiza con la luz del sol real)
     const sceneData = new Float32Array(48); // 192 bytes / 4
-    sceneData.set([0, 1, 1, 0], 0);       // Luz desde arriba-frente
-    sceneData.set([1.0, 1.0, 1.0, 1], 4); // Intensidad normal 1.0
+    sceneData.set([0, 0, 1, 0], 0); // Dirección fija (frontal)
+    sceneData.set([
+      sunColor[0] * sunIntensity,
+      sunColor[1] * sunIntensity,
+      sunColor[2] * sunIntensity,
+      1
+    ], 4);
     sceneData.set(mat4.create(), 8);   // lightVP (dummy)
     sceneData.set([0, 0, 3.2, 1], 24); // Cámara
     sceneData.set(mat4.create(), 28);  // invVP (dummy)
