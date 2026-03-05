@@ -1,10 +1,11 @@
 import { Logger } from '../Logger';
 import { UMaterial } from '../../Rendering/UMaterial';
 import { RGBELoader } from './RGBELoader';
+import { UAsset } from './UAsset';
 
 /**
  * Centralized Asset Manager for Game Engine resources.
- * Handles GPU Texture caching (VRAM) and relative path resolution.
+ * Handles GPU Texture caching (VRAM), Primitives, and relative path resolution.
  */
 export class UAssetManager {
   private static instance: UAssetManager;
@@ -12,8 +13,12 @@ export class UAssetManager {
   // Active directory handle selected via ProjectSystem (Editor)
   public currentProjectDirectory: FileSystemDirectoryHandle | null = null;
 
+  // UAsset Cache: id -> UAsset (Meshes)
+  private assets: Map<string, UAsset> = new Map();
+
   // VRAM Cache: relativePath -> GPUTexture
   private textureCache: Map<string, GPUTexture> = new Map();
+  // ... (rest of old code below)
 
   // HDRI Cache (rgba32float)
   private hdrCache: Map<string, GPUTexture> = new Map();
@@ -31,6 +36,277 @@ export class UAssetManager {
       UAssetManager.instance = new UAssetManager();
     }
     return UAssetManager.instance;
+  }
+
+  /**
+   * Initializes basic primitives (Box, Plane, Sphere, Cylinder, Cone, Capsule) and registers them in the asset cache.
+   */
+  public static async initialize(device: GPUDevice) {
+    const instance = this.getInstance();
+    instance.createBoxPrimitive(device);
+    instance.createPlanePrimitive(device);
+    instance.createSpherePrimitive(device);
+    instance.createCylinderPrimitive(device);
+    instance.createConePrimitive(device);
+    instance.createCapsulePrimitive(device);
+    Logger.info("[UAssetManager] Set de 6 primitivos inicializado con éxito.");
+  }
+
+  private createSpherePrimitive(device: GPUDevice) {
+    const segments = 32;
+    const radius = 0.5;
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    for (let lat = 0; lat <= segments; lat++) {
+      const theta = lat * Math.PI / segments;
+      const sinTheta = Math.sin(theta);
+      const cosTheta = Math.cos(theta);
+
+      for (let lon = 0; lon <= segments; lon++) {
+        const phi = lon * 2 * Math.PI / segments;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        const x = cosPhi * sinTheta;
+        const y = cosTheta;
+        const z = sinPhi * sinTheta;
+
+        // Position
+        vertices.push(x * radius, y * radius, z * radius);
+        // Normal
+        vertices.push(x, y, z);
+        // UV
+        vertices.push(lon / segments, lat / segments);
+      }
+    }
+
+    for (let lat = 0; lat < segments; lat++) {
+      for (let lon = 0; lon < segments; lon++) {
+        const first = (lat * (segments + 1)) + lon;
+        const second = first + segments + 1;
+
+        indices.push(first, second, first + 1);
+        indices.push(second, second + 1, first + 1);
+      }
+    }
+
+    this.assets.set('Primitive_Sphere', new UAsset('Primitive_Sphere', device, new Float32Array(vertices), new Uint32Array(indices)));
+  }
+
+  private createCylinderPrimitive(device: GPUDevice) {
+    const segments = 32;
+    const radius = 0.5;
+    const height = 1.0;
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    // 1. Side vertices
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      const x = Math.cos(theta);
+      const z = Math.sin(theta);
+      const u = i / segments;
+
+      // Bottom side vertex
+      vertices.push(x * radius, -height / 2, z * radius, x, 0, z, u, 1);
+      // Top side vertex
+      vertices.push(x * radius, height / 2, z * radius, x, 0, z, u, 0);
+    }
+
+    // Side indices
+    for (let i = 0; i < segments; i++) {
+      const base = i * 2;
+      indices.push(base, base + 1, base + 2);
+      indices.push(base + 1, base + 3, base + 2);
+    }
+
+    // 2. Bottom Cap
+    const bottomCenterIndex = vertices.length / 8;
+    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5);
+    const bottomRingStart = vertices.length / 8;
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius, 0, -1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+    }
+    for (let i = 0; i < segments; i++) {
+      indices.push(bottomCenterIndex, bottomRingStart + i + 1, bottomRingStart + i);
+    }
+
+    // 3. Top Cap
+    const topCenterIndex = vertices.length / 8;
+    vertices.push(0, height / 2, 0, 0, 1, 0, 0.5, 0.5);
+    const topRingStart = vertices.length / 8;
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      vertices.push(Math.cos(theta) * radius, height / 2, Math.sin(theta) * radius, 0, 1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+    }
+    for (let i = 0; i < segments; i++) {
+      indices.push(topCenterIndex, topRingStart + i, topRingStart + i + 1);
+    }
+
+    this.assets.set('Primitive_Cylinder', new UAsset('Primitive_Cylinder', device, new Float32Array(vertices), new Uint32Array(indices)));
+  }
+
+  private createConePrimitive(device: GPUDevice) {
+    const segments = 32;
+    const radius = 0.5;
+    const height = 1.0;
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    // 1. Side vertices
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      const x = Math.cos(theta);
+      const z = Math.sin(theta);
+      const u = i / segments;
+
+      // Normal for cone side: needs to be slanted
+      const nx = x;
+      const nz = z;
+      const ny = radius / height; // Approximation for smoothness
+      const mag = Math.sqrt(nx * nx + ny * ny + nz * nz);
+
+      // Bottom edge
+      vertices.push(x * radius, -height / 2, z * radius, nx / mag, ny / mag, nz / mag, u, 1);
+      // Tip (one vertex per segment for correct normals/UV)
+      vertices.push(0, height / 2, 0, nx / mag, ny / mag, nz / mag, u, 0);
+    }
+
+    for (let i = 0; i < segments; i++) {
+      const base = i * 2;
+      indices.push(base, base + 1, base + 2);
+    }
+
+    // 2. Base Cap (Bottom)
+    const centerIndex = vertices.length / 8;
+    vertices.push(0, -height / 2, 0, 0, -1, 0, 0.5, 0.5);
+    const ringStart = vertices.length / 8;
+    for (let i = 0; i <= segments; i++) {
+      const theta = (i / segments) * 2 * Math.PI;
+      vertices.push(Math.cos(theta) * radius, -height / 2, Math.sin(theta) * radius, 0, -1, 0, (Math.cos(theta) + 1) * 0.5, (Math.sin(theta) + 1) * 0.5);
+    }
+    for (let i = 0; i < segments; i++) {
+      indices.push(centerIndex, ringStart + i + 1, ringStart + i);
+    }
+
+    this.assets.set('Primitive_Cone', new UAsset('Primitive_Cone', device, new Float32Array(vertices), new Uint32Array(indices)));
+  }
+
+  private createCapsulePrimitive(device: GPUDevice) {
+    const segments = 32;
+    const radius = 0.5;
+    const cylinderHeight = 1.0;
+    const rings = 16; // Hemispheres
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    // Generate UV Sphere-like vertices but offset by height
+    const latEnd = rings * 2;
+
+    for (let lat = 0; lat <= latEnd; lat++) {
+      const theta = lat * Math.PI / latEnd;
+      const sinTheta = Math.sin(theta);
+      const cosTheta = Math.cos(theta);
+
+      // Offset Y based on which hemisphere we are in
+      let yOffset = 0;
+      if (lat < rings) yOffset = cylinderHeight / 2;
+      else if (lat > rings) yOffset = -cylinderHeight / 2;
+
+      for (let lon = 0; lon <= segments; lon++) {
+        const phi = lon * 2 * Math.PI / segments;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+
+        const x = cosPhi * sinTheta;
+        const y = cosTheta;
+        const z = sinPhi * sinTheta;
+
+        vertices.push(x * radius, (y * radius) + yOffset, z * radius);
+        vertices.push(x, y, z);
+        vertices.push(lon / segments, lat / latEnd);
+      }
+    }
+
+    for (let lat = 0; lat < latEnd; lat++) {
+      for (let lon = 0; lon < segments; lon++) {
+        const first = (lat * (segments + 1)) + lon;
+        const second = first + segments + 1;
+        indices.push(first, second, first + 1);
+        indices.push(second, second + 1, first + 1);
+      }
+    }
+
+    this.assets.set('Primitive_Capsule', new UAsset('Primitive_Capsule', device, new Float32Array(vertices), new Uint32Array(indices)));
+  }
+
+  private createBoxPrimitive(device: GPUDevice) {
+    // A standard 1.0 unit cube centered at (0,0,0)
+    // Layout: Position (3f), Normal (3f), UV (2f) - 24 vertices
+    const vertices = new Float32Array([
+      // Front face (Normal Z+)
+      -0.5, -0.5, 0.5, 0, 0, 1, 0, 1,
+      0.5, -0.5, 0.5, 0, 0, 1, 1, 1,
+      0.5, 0.5, 0.5, 0, 0, 1, 1, 0,
+      -0.5, 0.5, 0.5, 0, 0, 1, 0, 0,
+      // Back face (Normal Z-)
+      -0.5, -0.5, -0.5, 0, 0, -1, 1, 1,
+      -0.5, 0.5, -0.5, 0, 0, -1, 1, 0,
+      0.5, 0.5, -0.5, 0, 0, -1, 0, 0,
+      0.5, -0.5, -0.5, 0, 0, -1, 0, 1,
+      // Top face (Normal Y+)
+      -0.5, 0.5, -0.5, 0, 1, 0, 0, 0,
+      -0.5, 0.5, 0.5, 0, 1, 0, 0, 1,
+      0.5, 0.5, 0.5, 0, 1, 0, 1, 1,
+      0.5, 0.5, -0.5, 0, 1, 0, 1, 0,
+      // Bottom face (Normal Y-)
+      -0.5, -0.5, -0.5, 0, -1, 0, 0, 1,
+      0.5, -0.5, -0.5, 0, -1, 0, 1, 1,
+      0.5, -0.5, 0.5, 0, -1, 0, 1, 0,
+      -0.5, -0.5, 0.5, 0, -1, 0, 0, 0,
+      // Right face (Normal X+)
+      0.5, -0.5, -0.5, 1, 0, 0, 1, 1,
+      0.5, 0.5, -0.5, 1, 0, 0, 1, 0,
+      0.5, 0.5, 0.5, 1, 0, 0, 0, 0,
+      0.5, -0.5, 0.5, 1, 0, 0, 0, 1,
+      // Left face (Normal X-)
+      -0.5, -0.5, -0.5, -1, 0, 0, 0, 1,
+      -0.5, -0.5, 0.5, -1, 0, 0, 1, 1,
+      -0.5, 0.5, 0.5, -1, 0, 0, 1, 0,
+      -0.5, 0.5, -0.5, -1, 0, 0, 0, 0,
+    ]);
+
+    const indices = new Uint32Array([
+      0, 1, 2, 0, 2, 3, // Front
+      4, 5, 6, 4, 6, 7, // Back
+      8, 9, 10, 8, 10, 11, // Top
+      12, 13, 14, 12, 14, 15, // Bottom
+      16, 17, 18, 16, 18, 19, // Right
+      20, 21, 22, 20, 22, 23, // Left
+    ]);
+
+    this.assets.set('Primitive_Cube', new UAsset('Primitive_Cube', device, vertices, indices));
+  }
+
+  private createPlanePrimitive(device: GPUDevice) {
+    // A standard 1.0 unit plane on XZ axis
+    const vertices = new Float32Array([
+      -0.5, 0, -0.5, 0, 1, 0, 0, 0,
+      0.5, 0, -0.5, 0, 1, 0, 1, 0,
+      0.5, 0, 0.5, 0, 1, 0, 1, 1,
+      -0.5, 0, 0.5, 0, 1, 0, 0, 1
+    ]);
+    const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+    this.assets.set('Primitive_Plane', new UAsset('Primitive_Plane', device, vertices, indices));
+  }
+
+  /**
+   * Retrieves a cached UAsset (Primitive mesh) by ID.
+   */
+  public static getAsset(id: string): UAsset | undefined {
+    return this.getInstance().assets.get(id);
   }
 
   /**
@@ -256,5 +532,9 @@ export class UAssetManager {
     // but clearing the map allows garbage collection if they are unreferenced.
     this.textureCache.clear();
     this.materialCache.clear();
+
+    // Also clear primitives cached as UAssets
+    this.assets.forEach(asset => asset.destroy());
+    this.assets.clear();
   }
 }
