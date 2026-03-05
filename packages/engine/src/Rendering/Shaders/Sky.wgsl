@@ -1,9 +1,10 @@
 struct SceneUniforms {
+    viewProj: mat4x4<f32>,
+    invViewProj: mat4x4<f32>,
+    cameraPosition: vec4<f32>,
     lightDirection: vec4<f32>,
     lightColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
-    cameraPosition: vec4<f32>,
-    invViewProj: mat4x4<f32>,
 }
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 

@@ -269,7 +269,7 @@ export class Renderer {
       depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
     });
 
-    this.sceneUniformBuffer = this.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    this.sceneUniformBuffer = this.device.createBuffer({ size: 256, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
     // PASO B: Inicializar el lightUniformBuffer (Fase 3)
     this.lightUniformBuffer = this.device.createBuffer({
@@ -326,6 +326,7 @@ export class Renderer {
     this.executeShadowPass(frameData);
     this.executeSkyPass(frameData);
     this.executeMainPass(frameData);
+    this.executeGridPass(frameData);
     this.executeGizmoPass(frameData);
     this.submitFrame(frameData.commandEncoder);
   }
@@ -413,20 +414,23 @@ export class Renderer {
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
     mat4.multiply(lightViewProj, lightProj, lightView);
 
-    const sceneData = new Float32Array(48); // Expanded (Phase 28) for 192-byte alignment (invViewProj)
-    sceneData.set([...lightDir, 0], 0);
-
-    // Multiplicamos intensidad por color (Fase 2 Lighting Architecture)
-    const finalLightColor = lightColor.map(c => c * lightIntensity);
-    sceneData.set([...finalLightColor, 1], 4);
-
-    sceneData.set(lightViewProj as any, 8);
-    const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
-    sceneData.set([...camPos, 1.0], 24);
-
+    const sceneData = new Float32Array(64); // 256 bytes (64 floats)
+    // 0-15: viewProj
+    sceneData.set(viewProjMatrix as any, 0);
+    // 16-31: invViewProj
     const invViewProj = mat4.create();
     mat4.invert(invViewProj, viewProjMatrix);
-    sceneData.set(invViewProj as any, 28);
+    sceneData.set(invViewProj as any, 16);
+    // 32-35: cameraPos
+    const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
+    sceneData.set([...camPos, 1.0], 32);
+    // 36-39: lightDir
+    sceneData.set([...lightDir, 0], 36);
+    // 40-43: lightColor (intensidad incluida)
+    const finalLightColor = lightColor.map(c => c * lightIntensity);
+    sceneData.set([...finalLightColor, 1], 40);
+    // 44-59: lightViewProj
+    sceneData.set(lightViewProj as any, 44);
 
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
@@ -529,9 +533,7 @@ export class Renderer {
       const isSelected = actor.isSelected;
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
-          if (component.topology === 'line-list' && !component.isGizmo) {
-            this.renderGrid(pass, component, viewProjMatrix);
-          } else if (component.topology === 'triangle-list' && !component.isGizmo) {
+          if (component.topology === 'triangle-list' && !component.isGizmo) {
             this.renderMesh(pass, component, viewProjMatrix, isSelected);
           }
         }
@@ -583,6 +585,30 @@ export class Renderer {
         }
       }
     }
+    pass.end();
+  }
+
+  private executeGridPass(frameData: FrameData): void {
+    if (!this.linePipeline || !this.sceneBindGroup) return;
+    const { commandEncoder, textureView } = frameData;
+
+    const pass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: textureView,
+        loadOp: 'load',
+        storeOp: 'store',
+      }],
+      depthStencilAttachment: {
+        view: this.depthTextureView!,
+        depthLoadOp: 'load',
+        depthStoreOp: 'store',
+      },
+    });
+
+    pass.setPipeline(this.linePipeline);
+    // Use skyBindGroup which ONLY has binding 0 (common for Sky and Grid)
+    pass.setBindGroup(0, this.skyBindGroup);
+    pass.draw(6); // Full-screen quad (2 triangles)
     pass.end();
   }
 
@@ -647,16 +673,6 @@ export class Renderer {
     if (isSelected && this.outlinePipeline) { pass.setPipeline(this.outlinePipeline); pass.drawIndexed(component.indexCount); }
   }
 
-  private renderGrid(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4) {
-    if (!this.linePipeline) return;
-    const mvp = mat4.create();
-    mat4.multiply(mvp, viewProj, component.getWorldMatrix());
-    const buffer = this.getOrCreateUniformBuffer(component.id, 64);
-    this.device!.queue.writeBuffer(buffer, 0, mvp as any);
-    const bindGroup = this.getOrCreateBindGroup(component.id, this.linePipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
-    pass.setPipeline(this.linePipeline); pass.setBindGroup(0, bindGroup);
-    pass.setVertexBuffer(0, component.vertexBuffer!); pass.draw(component.vertexCount);
-  }
 
   private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array, axisId: number = 0) {
     const pipeline = this.gizmoTriangleOverlayPipeline;

@@ -12,11 +12,12 @@ struct Uniforms {
 @group(0) @binding(4) var normalMap: texture_2d<f32>;
 
 struct SceneUniforms {
+    viewProj: mat4x4<f32>,
+    invViewProj: mat4x4<f32>,
+    cameraPosition: vec4<f32>,
     lightDirection: vec4<f32>,
     lightColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
-    cameraPosition: vec4<f32>,
-    invViewProj: mat4x4<f32>,
 }
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
