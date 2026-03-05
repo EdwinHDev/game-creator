@@ -2,6 +2,8 @@ import { Logger } from './Logger';
 import { EventBus } from './EventBus';
 import { Renderer } from '../Rendering/Renderer';
 import { World } from '../Framework/World';
+import { UCameraComponent } from '../Components/UCameraComponent';
+import { vec3, mat4 } from 'gl-matrix';
 
 /**
  * Main application class of the engine.
@@ -100,6 +102,20 @@ export class Engine {
     // 2. Renderizar solo el Mundo Activo en el Canvas Principal
     const activeWorld = this.getActiveWorld();
     if (activeWorld) {
+      // Phase 6: Update Gizmo Scale before rendering
+      const gizmoActor = activeWorld.actors.find(a => a.hasTag('Gizmo')) as any;
+      if (gizmoActor && gizmoActor.updateGizmoScale) {
+        // Encontrar la cámara activa para el escalado
+        const cameraActor = activeWorld.actors.find(a => a.getComponent(UCameraComponent));
+        const mainCamera = cameraActor?.getComponent(UCameraComponent);
+
+        if (mainCamera && mainCamera.owner.rootComponent) {
+          const camPos = vec3.create();
+          mat4.getTranslation(camPos, mainCamera.owner.rootComponent.getWorldMatrix());
+          gizmoActor.updateGizmoScale(camPos, mainCamera.fov || 45);
+        }
+      }
+
       this.renderer.render(activeWorld);
     }
   }

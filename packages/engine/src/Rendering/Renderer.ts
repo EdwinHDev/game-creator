@@ -521,7 +521,7 @@ export class Renderer {
     });
 
     for (const actor of world.actors) {
-      if (actor.bIsHidden) continue; // Skip hidden actors
+      if (actor.bIsHidden || actor.hasTag('Gizmo')) continue;
       const isSelected = actor.isSelected;
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {

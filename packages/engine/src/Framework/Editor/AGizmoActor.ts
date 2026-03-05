@@ -77,16 +77,18 @@ export class AGizmoActor extends AActor {
     this.zAxisTip.setupAttachment(dummyRoot);
   }
 
-  public updateGizmoScale(cameraPosition: vec3, fov: number = 45) {
+  public updateGizmoScale(cameraPosition: vec3, cameraFOV: number = 45) {
     if (!this.rootComponent) return;
 
-    const worldPos = vec3.create();
-    const worldMat = this.rootComponent.getWorldMatrix();
-    mat4.getTranslation(worldPos, worldMat);
+    const gizmoPosition = vec3.create();
+    mat4.getTranslation(gizmoPosition, this.rootComponent.getWorldMatrix());
 
-    const distance = vec3.distance(cameraPosition, worldPos);
-    const scaleVal = (distance / fov) * 2.0; // Adjustable constant
+    const distance = vec3.distance(cameraPosition, gizmoPosition);
 
-    this.rootComponent.relativeScale = vec3.fromValues(scaleVal, scaleVal, scaleVal);
+    // Factor de escala basado en distancia para mantener tamaño constante en píxeles
+    const scaleFactor = (distance * Math.tan(cameraFOV * 0.5 * (Math.PI / 180))) * 0.15;
+
+    this.rootComponent.relativeScale = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
+    this.rootComponent.updateWorldMatrix();
   }
 }
