@@ -539,16 +539,37 @@ export class Renderer {
   private executeGizmoPass(frameData: FrameData): void {
     const { commandEncoder, textureView, world, viewProjMatrix, mainCamera, aspectRatio } = frameData;
 
+    // Overlay Render Pass: We want the gizmo to draw on top of everything.
+    // Standard approach: Clear the depth buffer before drawing the gizmos.
     const pass = commandEncoder.beginRenderPass({
       colorAttachments: [{ view: textureView, loadOp: 'load', storeOp: 'store' }],
-      depthStencilAttachment: { view: this.depthTextureView!, depthLoadOp: 'clear', depthStoreOp: 'store', depthClearValue: 1.0 }
+      depthStencilAttachment: {
+        view: this.depthTextureView!,
+        depthLoadOp: 'clear',
+        depthStoreOp: 'store',
+        depthClearValue: 1.0
+      }
     });
 
     for (const actor of world.actors) {
-      if (actor.bIsHidden) continue; // Skip hidden actors
+      if (actor.bIsHidden || !actor.hasTag('Gizmo')) continue;
+
+      // Lookdev dynamic scale update (optional if called from outside, but good for self-containment)
+      if ((actor as any).updateGizmoScale) {
+        const camPos = vec3.create();
+        mat4.getTranslation(camPos, mainCamera.owner.rootComponent!.getWorldMatrix());
+        (actor as any).updateGizmoScale(camPos);
+      }
+
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
-          this.renderGizmo(pass, component, viewProjMatrix);
+          // Identify axis by component name for coloring
+          let axisColor = new Float32Array([1, 1, 1, 1]);
+          if (component.name.includes('X_')) axisColor = new Float32Array([1.0, 0.2, 0.2, 1.0]); // Red
+          else if (component.name.includes('Y_')) axisColor = new Float32Array([0.2, 1.0, 0.2, 1.0]); // Green
+          else if (component.name.includes('Z_')) axisColor = new Float32Array([0.2, 0.2, 1.0, 1.0]); // Blue
+
+          this.renderGizmo(pass, component, viewProjMatrix, axisColor);
         }
       }
     }
@@ -640,17 +661,27 @@ export class Renderer {
     pass.setVertexBuffer(0, component.vertexBuffer!); pass.draw(component.vertexCount);
   }
 
-  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4) {
-    const pipeline = component.topology === 'line-list' ? this.gizmoOverlayPipeline : this.gizmoTriangleOverlayPipeline;
+  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array) {
+    const pipeline = this.gizmoTriangleOverlayPipeline;
     if (!pipeline) return;
+
     const mvp = mat4.create();
-    mat4.multiply(mvp, viewProj, component.getWorldMatrix());
-    const buffer = this.getOrCreateUniformBuffer(component.id, 128); // mat4 + vec4
-    this.device!.queue.writeBuffer(buffer, 0, mvp as any);
-    const color = component.material ? component.material.baseColor : new Float32Array([1, 1, 1, 1]);
-    this.device!.queue.writeBuffer(buffer, 64, color as any);
-    const bindGroup = this.getOrCreateBindGroup(component.id, pipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
-    pass.setPipeline(pipeline); pass.setBindGroup(0, bindGroup);
+    const model = component.getWorldMatrix();
+    mat4.multiply(mvp, viewProj, model);
+
+    // Uniforms: MVP (64) + Color (16) = 80 bytes
+    const buffer = this.getOrCreateUniformBuffer(`${component.id}_gizmo`, 80);
+    const data = new Float32Array(20); // 16 for mat4, 4 for vec4
+    data.set(mvp as any, 0);
+    data.set(color, 16);
+    this.device!.queue.writeBuffer(buffer, 0, data);
+
+    const bindGroup = this.getOrCreateBindGroup(`${component.id}_gizmo_bg`, pipeline.getBindGroupLayout(0), [
+      { binding: 0, resource: { buffer } }
+    ]);
+
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
     pass.setVertexBuffer(0, component.vertexBuffer!);
     if (component.indexBuffer) {
       pass.setIndexBuffer(component.indexBuffer, 'uint32');
