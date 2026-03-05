@@ -57,6 +57,7 @@ export class Renderer {
   private bindGroups: Map<string, GPUBindGroup> = new Map();
 
   private sceneUniformBuffer: GPUBuffer | null = null;
+  private lightUniformBuffer: GPUBuffer | null = null;
   private sceneBindGroup: GPUBindGroup | null = null;
   private skyBindGroup: GPUBindGroup | null = null;
 
@@ -196,7 +197,8 @@ export class Renderer {
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } }
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
       ]
     });
 
@@ -264,13 +266,21 @@ export class Renderer {
     });
 
     this.sceneUniformBuffer = this.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+    // PASO B: Inicializar el lightUniformBuffer (Fase 3)
+    this.lightUniformBuffer = this.device.createBuffer({
+      size: 16 * 4 * 4, // 16 floats por luz * 4 luces * 4 bytes = 256 bytes
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.trianglePipeline.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
-        { binding: 3, resource: this.fallbackHDRTexture!.createView() }
+        { binding: 3, resource: this.fallbackHDRTexture!.createView() },
+        { binding: 4, resource: { buffer: this.lightUniformBuffer! } }
       ],
     });
 
@@ -344,20 +354,42 @@ export class Renderer {
     mat4.multiply(viewProjMatrix, mainCamera.getProjectionMatrix(aspectRatio), mainCamera.getViewMatrix());
     mat4.copy(this.viewProjMatrix, viewProjMatrix);
 
-    let directionalLight: UDirectionalLightComponent | null = null;
+    const directionalLights: UDirectionalLightComponent[] = [];
     let skyLight: USkyLightComponent | null = null;
 
     for (const actor of world.actors) {
-      if (!directionalLight) directionalLight = actor.getComponent(UDirectionalLightComponent);
+      if (directionalLights.length < 4) {
+        const light = actor.getComponent(UDirectionalLightComponent);
+        if (light) directionalLights.push(light);
+      }
       if (!skyLight) skyLight = actor.getComponent(USkyLightComponent);
-      if (directionalLight && skyLight) break;
     }
 
-    // Extraction of direction from WorldMatrix (assuming Sun Actor root component defines it)
+    // PASO C: Actualizar el envío de datos en 'prepareFrame' (Fase 3)
+    const lightBufferData = new Float32Array(8 * 4); // 4 luces * 8 floats per Light
+    for (let i = 0; i < directionalLights.length; i++) {
+      const light = directionalLights[i];
+      const worldMat = light.owner.rootComponent?.getWorldMatrix() || mat4.create();
+      const lightForward = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
+      vec3.normalize(lightForward, lightForward);
+
+      const offset = i * 8;
+      lightBufferData.set(lightForward, offset);
+      lightBufferData.set([0], offset + 3); // padding
+      lightBufferData.set(light.color, offset + 4);
+      lightBufferData.set([light.intensity], offset + 7); // intensity in w
+    }
+    this.device.queue.writeBuffer(this.lightUniformBuffer!, 0, lightBufferData);
+
+    const countBuffer = new Uint32Array([directionalLights.length]);
+    this.device.queue.writeBuffer(this.lightUniformBuffer!, 128, countBuffer);
+
+    // Initial direction/color for shadow pass (using the first light)
+    const directionalLight = directionalLights[0] || null;
     let lightDir = vec3.fromValues(-0.5, -1, -0.5);
     if (directionalLight && directionalLight.owner.rootComponent) {
       const worldMat = directionalLight.owner.rootComponent.getWorldMatrix();
-      lightDir = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]); // Extract forward (-Z)
+      lightDir = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
       vec3.normalize(lightDir, lightDir);
     }
 
@@ -402,7 +434,8 @@ export class Renderer {
         { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
-        { binding: 3, resource: hdrView }
+        { binding: 3, resource: hdrView },
+        { binding: 4, resource: { buffer: this.lightUniformBuffer! } }
       ],
     });
 

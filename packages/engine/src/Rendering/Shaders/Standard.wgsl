@@ -23,6 +23,17 @@ struct SceneUniforms {
 @group(1) @binding(2) var shadowSampler: sampler_comparison;
 @group(1) @binding(3) var envMap: texture_2d<f32>;
 
+struct Light {
+    direction: vec4<f32>,
+    color: vec4<f32>, // rgb + intensidad en el canal w
+};
+
+struct LightData {
+    lights: array<Light, 4>,
+    lightCount: u32,
+};
+@group(1) @binding(4) var<uniform> lightData: LightData;
+
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
     @location(0) normal: vec3<f32>,
@@ -116,33 +127,50 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     let cameraPos = scene.cameraPosition.xyz;
     let V = normalize(cameraPos - in.worldPos);
-    let L = normalize(-scene.lightDirection.xyz);
-    let H = normalize(V + L);
-
-    // Cook-Torrance PBR
-    var F0 = vec3<f32>(0.04);
-    F0 = mix(F0, diffuseColor, uniforms.metallic);
-
-    let NDF = DistributionGGX(N, H, finalRoughness);
-    let G = GeometrySmith(N, V, L, uniforms.roughness);
-    let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-
-    let kS = F;
-    var kD = vec3<f32>(1.0) - kS;
-    kD *= 1.0 - uniforms.metallic;
-
-    let numerator = NDF * G * F;
-    let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-    let specular = numerator / denominator;
-
     let shadowCoords = in.shadowPos.xyz / in.shadowPos.w;
     let flipCorrect = vec2<f32>(0.5, -0.5);
     let posUV = shadowCoords.xy * flipCorrect + 0.5;
     let shadowVisibility = textureSampleCompare(shadowMap, shadowSampler, posUV, shadowCoords.z - 0.005);
 
-    let NdotL = max(dot(N, L), 0.0);
-    let specularGain = mix(20.0, 0.0, uniforms.roughness);
-    let directLighting = (kD * diffuseColor / PI + specular * specularGain) * scene.lightColor.rgb * NdotL * shadowVisibility;
+    // Cook-Torrance PBR Base Reflection
+    var F0 = vec3<f32>(0.04);
+    F0 = mix(F0, diffuseColor, uniforms.metallic);
+
+    // Multi-Light PBR Loop (Phase 3 Lighting Architecture)
+    var totalDirectLighting = vec3<f32>(0.0);
+    for (var i = 0u; i < lightData.lightCount; i++) {
+        let light = lightData.lights[i];
+        let L = normalize(-light.direction.xyz);
+        let H = normalize(V + L);
+        let lightColorArr = light.color.rgb;
+        let lightIntensityVal = light.color.w;
+
+        // Cook-Torrance per light
+        let NDF_l = DistributionGGX(N, H, finalRoughness);
+        let G_l = GeometrySmith(N, V, L, uniforms.roughness);
+        let F_l = fresnelSchlick(max(dot(H, V), 0.0), F0);
+
+        let kS_l = F_l;
+        var kD_l = vec3<f32>(1.0) - kS_l;
+        kD_l *= 1.0 - uniforms.metallic;
+
+        let numerator_l = NDF_l * G_l * F_l;
+        let denominator_l = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+        let specular_l = numerator_l / denominator_l;
+
+        let NdotL_l = max(dot(N, L), 0.0);
+        let specularGain_l = mix(20.0, 0.0, uniforms.roughness);
+        
+        // Shadow only applies to the first light in this phase (Standard practice for simple forward)
+        var visibility = 1.0;
+        if (i == 0u) {
+            visibility = shadowVisibility;
+        }
+
+        totalDirectLighting += (kD_l * diffuseColor / PI + specular_l * specularGain_l) * lightColorArr * lightIntensityVal * NdotL_l * visibility;
+    }
+    
+    let directLighting = totalDirectLighting;
     
     // 2. IBL HDRI INTEGRADO (DIFUSO Y ESPECULAR)
     let envDims = vec2<f32>(textureDimensions(envMap));
