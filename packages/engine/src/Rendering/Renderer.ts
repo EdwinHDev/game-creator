@@ -403,10 +403,11 @@ export class Renderer {
     pass.setPipeline(this.shadowPipeline);
 
     for (const actor of world.actors) {
+      if (actor.bIsHidden) continue; // Skip hidden actors
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.topology === 'triangle-list' && !component.isGizmo) {
           const lMVP = mat4.create();
-          mat4.multiply(lMVP, lightViewProj, component.getTransformMatrix());
+          mat4.multiply(lMVP, lightViewProj, component.getWorldMatrix());
           const buffer = this.getOrCreateUniformBuffer(component.id + "_shadow", 64);
           this.device!.queue.writeBuffer(buffer, 0, lMVP as any);
           const bindGroup = this.getOrCreateBindGroup(component.id + "_shadow", this.shadowPipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
@@ -458,6 +459,7 @@ export class Renderer {
     });
 
     for (const actor of world.actors) {
+      if (actor.bIsHidden) continue; // Skip hidden actors
       const isSelected = actor.isSelected;
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer) {
@@ -481,6 +483,7 @@ export class Renderer {
     });
 
     for (const actor of world.actors) {
+      if (actor.bIsHidden) continue; // Skip hidden actors
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
           this.renderGizmo(pass, component, viewProjMatrix);
@@ -492,6 +495,7 @@ export class Renderer {
       pass.setPipeline(this.billboardPipeline);
       pass.setVertexBuffer(0, this.billboardQuadBuffer);
       for (const actor of world.actors) {
+        if (actor.bIsHidden) continue; // Hide icons too
         for (const component of actor.components) {
           if (component instanceof UDirectionalLightComponent) {
             this.renderBillboard(pass, component, mainCamera, aspectRatio);
@@ -509,7 +513,7 @@ export class Renderer {
   private renderMesh(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, isSelected: boolean) {
     if (!this.trianglePipeline || !this.sceneBindGroup) return;
     const mvp = mat4.create();
-    const model = component.getTransformMatrix();
+    const model = component.getWorldMatrix();
     mat4.multiply(mvp, viewProj, model);
     const buffer = this.getOrCreateUniformBuffer(component.id, 160);
     const data = new Float32Array(40);
@@ -566,7 +570,7 @@ export class Renderer {
   private renderGrid(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4) {
     if (!this.linePipeline) return;
     const mvp = mat4.create();
-    mat4.multiply(mvp, viewProj, component.getTransformMatrix());
+    mat4.multiply(mvp, viewProj, component.getWorldMatrix());
     const buffer = this.getOrCreateUniformBuffer(component.id, 64);
     this.device!.queue.writeBuffer(buffer, 0, mvp as any);
     const bindGroup = this.getOrCreateBindGroup(component.id, this.linePipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
@@ -578,7 +582,7 @@ export class Renderer {
     const pipeline = component.topology === 'line-list' ? this.gizmoOverlayPipeline : this.gizmoTriangleOverlayPipeline;
     if (!pipeline) return;
     const mvp = mat4.create();
-    mat4.multiply(mvp, viewProj, component.getTransformMatrix());
+    mat4.multiply(mvp, viewProj, component.getWorldMatrix());
     const buffer = this.getOrCreateUniformBuffer(component.id, 128); // mat4 + vec4
     this.device!.queue.writeBuffer(buffer, 0, mvp as any);
     const color = component.material ? component.material.baseColor : new Float32Array([1, 1, 1, 1]);

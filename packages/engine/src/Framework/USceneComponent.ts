@@ -24,6 +24,9 @@ export class USceneComponent extends UActorComponent {
   public parent: USceneComponent | null = null;
   public children: USceneComponent[] = [];
 
+  protected localMatrix: mat4 = mat4.create();
+  protected worldMatrix: mat4 = mat4.create();
+
   constructor(owner: AActor, name: string = 'SceneComponent') {
     super(owner, name);
 
@@ -50,17 +53,43 @@ export class USceneComponent extends UActorComponent {
   }
 
   /**
-   * Calculates and returns the local transformation matrix of this component.
+   * Updates the world matrix of this component and its children recursively.
    */
-  public getTransformMatrix(): mat4 {
-    const matrix = mat4.create();
+  public updateWorldMatrix(parentWorldMatrix?: mat4): void {
+    // 1. Calcular matriz local a partir de pos/rot/esc
     mat4.fromRotationTranslationScale(
-      matrix,
+      this.localMatrix,
       this.relativeRotation,
       this.relativeLocation,
       this.relativeScale
     );
-    return matrix;
+
+    // 2. Si tiene padre, multiplicar: World = ParentWorld * Local
+    if (parentWorldMatrix) {
+      mat4.multiply(this.worldMatrix, parentWorldMatrix, this.localMatrix);
+    } else {
+      mat4.copy(this.worldMatrix, this.localMatrix);
+    }
+
+    // 3. Propagar a los hijos (recursividad profesional)
+    for (const child of this.children) {
+      child.updateWorldMatrix(this.worldMatrix);
+    }
+  }
+
+  /**
+   * Returns the cached world transformation matrix.
+   */
+  public getWorldMatrix(): mat4 {
+    return this.worldMatrix;
+  }
+
+  /**
+   * Calculates and returns the local transformation matrix of this component.
+   * Legacy method for compatibility.
+   */
+  public getTransformMatrix(): mat4 {
+    return this.localMatrix;
   }
 
   /**

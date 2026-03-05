@@ -11,11 +11,11 @@ export class AActor extends UObject {
    * The main scene component that defines the transform of this actor.
    */
   public rootComponent: USceneComponent | null = null;
-
-  /**
-   * List of all components owned by this actor.
-   */
   public components: UActorComponent[] = [];
+  public tags: string[] = []; // Sistema de etiquetas para filtrado
+
+  public bCanTick: boolean = true;    // Control de actualización lógica
+  public bIsHidden: boolean = false;  // Control de renderizado
 
   /**
    * If true, this actor won't be visible in the editor's Outliner.
@@ -29,6 +29,14 @@ export class AActor extends UObject {
 
   constructor(name: string = 'Actor') {
     super(name);
+  }
+
+  public hasTag(tag: string): boolean {
+    return this.tags.includes(tag);
+  }
+
+  public addTag(tag: string): void {
+    if (!this.hasTag(tag)) this.tags.push(tag);
   }
 
   /**
@@ -78,8 +86,15 @@ export class AActor extends UObject {
    * Called every frame.
    */
   public tick(deltaTime: number): void {
+    if (!this.bCanTick) return;
+
     for (const component of this.components) {
       component.tick(deltaTime);
+    }
+
+    // Update the world matrix hierarchy starting from the root
+    if (this.rootComponent) {
+      this.rootComponent.updateWorldMatrix();
     }
   }
 
