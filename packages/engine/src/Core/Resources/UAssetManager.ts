@@ -54,7 +54,7 @@ export class UAssetManager {
 
   private createSpherePrimitive(device: GPUDevice) {
     const segments = 32;
-    const radius = 0.5;
+    const radius = 50.0;
     const vertices: number[] = [];
     const indices: number[] = [];
 
@@ -98,8 +98,8 @@ export class UAssetManager {
 
   private createCylinderPrimitive(device: GPUDevice) {
     const segments = 32;
-    const radius = 0.5;
-    const height = 1.0;
+    const radius = 50.0;
+    const height = 100.0;
     const vertices: number[] = [];
     const indices: number[] = [];
 
@@ -156,8 +156,8 @@ export class UAssetManager {
 
   private createConePrimitive(device: GPUDevice) {
     const segments = 32;
-    const radius = 0.5;
-    const height = 1.0;
+    const radius = 50.0;
+    const height = 100.0;
     const vertices: number[] = [];
     const indices: number[] = [];
 
@@ -204,8 +204,8 @@ export class UAssetManager {
 
   private createCapsulePrimitive(device: GPUDevice) {
     const segments = 32;
-    const radius = 0.5;
-    const cylinderHeight = 1.0;
+    const radius = 50.0;
+    const cylinderHeight = 100.0;
     const rings = 16; // Hemispheres
     const vertices: number[] = [];
     const indices: number[] = [];
@@ -252,39 +252,39 @@ export class UAssetManager {
   }
 
   private createBoxPrimitive(device: GPUDevice) {
-    // A standard 1.0 unit cube centered at (0,0,0)
+    // A standard 100.0 unit cube centered at (0,0,0)
     // Layout: Position (3f), Normal (3f), UV (2f) - 24 vertices
     const vertices = new Float32Array([
       // Front face (Normal Z+) -> Tangent X+
-      -0.5, -0.5, 0.5, 0, 0, 1, 0, 1, 1, 0, 0, 1,
-      0.5, -0.5, 0.5, 0, 0, 1, 1, 1, 1, 0, 0, 1,
-      0.5, 0.5, 0.5, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-      -0.5, 0.5, 0.5, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+      -50.0, -50.0, 50.0, 0, 0, 1, 0, 1, 1, 0, 0, 1,
+      50.0, -50.0, 50.0, 0, 0, 1, 1, 1, 1, 0, 0, 1,
+      50.0, 50.0, 50.0, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+      -50.0, 50.0, 50.0, 0, 0, 1, 0, 0, 1, 0, 0, 1,
       // Back face (Normal Z-) -> Tangent X-
-      -0.5, -0.5, -0.5, 0, 0, -1, 1, 1, -1, 0, 0, 1,
-      -0.5, 0.5, -0.5, 0, 0, -1, 1, 0, -1, 0, 0, 1,
-      0.5, 0.5, -0.5, 0, 0, -1, 0, 0, -1, 0, 0, 1,
-      0.5, -0.5, -0.5, 0, 0, -1, 0, 1, -1, 0, 0, 1,
+      -50.0, -50.0, -50.0, 0, 0, -1, 1, 1, -1, 0, 0, 1,
+      -50.0, 50.0, -50.0, 0, 0, -1, 1, 0, -1, 0, 0, 1,
+      50.0, 50.0, -50.0, 0, 0, -1, 0, 0, -1, 0, 0, 1,
+      50.0, -50.0, -50.0, 0, 0, -1, 0, 1, -1, 0, 0, 1,
       // Top face (Normal Y+) -> Tangent X+
-      -0.5, 0.5, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      -0.5, 0.5, 0.5, 0, 1, 0, 0, 1, 1, 0, 0, 1,
-      0.5, 0.5, 0.5, 0, 1, 0, 1, 1, 1, 0, 0, 1,
-      0.5, 0.5, -0.5, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+      -50.0, 50.0, -50.0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      -50.0, 50.0, 50.0, 0, 1, 0, 0, 1, 1, 0, 0, 1,
+      50.0, 50.0, 50.0, 0, 1, 0, 1, 1, 1, 0, 0, 1,
+      50.0, 50.0, -50.0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
       // Bottom face (Normal Y-) -> Tangent X+
-      -0.5, -0.5, -0.5, 0, -1, 0, 0, 1, 1, 0, 0, 1,
-      0.5, -0.5, -0.5, 0, -1, 0, 1, 1, 1, 0, 0, 1,
-      0.5, -0.5, 0.5, 0, -1, 0, 1, 0, 1, 0, 0, 1,
-      -0.5, -0.5, 0.5, 0, -1, 0, 0, 0, 1, 0, 0, 1,
+      -50.0, -50.0, -50.0, 0, -1, 0, 0, 1, 1, 0, 0, 1,
+      50.0, -50.0, -50.0, 0, -1, 0, 1, 1, 1, 0, 0, 1,
+      50.0, -50.0, 50.0, 0, -1, 0, 1, 0, 1, 0, 0, 1,
+      -50.0, -50.0, 50.0, 0, -1, 0, 0, 0, 1, 0, 0, 1,
       // Right face (Normal X+) -> Tangent Z-
-      0.5, -0.5, -0.5, 1, 0, 0, 1, 1, 0, 0, -1, 1,
-      0.5, 0.5, -0.5, 1, 0, 0, 1, 0, 0, 0, -1, 1,
-      0.5, 0.5, 0.5, 1, 0, 0, 0, 0, 0, 0, -1, 1,
-      0.5, -0.5, 0.5, 1, 0, 0, 0, 1, 0, 0, -1, 1,
+      50.0, -50.0, -50.0, 1, 0, 0, 1, 1, 0, 0, -1, 1,
+      50.0, 50.0, -50.0, 1, 0, 0, 1, 0, 0, 0, -1, 1,
+      50.0, 50.0, 50.0, 1, 0, 0, 0, 0, 0, 0, -1, 1,
+      50.0, -50.0, 50.0, 1, 0, 0, 0, 1, 0, 0, -1, 1,
       // Left face (Normal X-) -> Tangent Z+
-      -0.5, -0.5, -0.5, -1, 0, 0, 0, 1, 0, 0, 1, 1,
-      -0.5, -0.5, 0.5, -1, 0, 0, 1, 1, 0, 0, 1, 1,
-      -0.5, 0.5, 0.5, -1, 0, 0, 1, 0, 0, 0, 1, 1,
-      -0.5, 0.5, -0.5, -1, 0, 0, 0, 0, 0, 0, 1, 1,
+      -50.0, -50.0, -50.0, -1, 0, 0, 0, 1, 0, 0, 1, 1,
+      -50.0, -50.0, 50.0, -1, 0, 0, 1, 1, 0, 0, 1, 1,
+      -50.0, 50.0, 50.0, -1, 0, 0, 1, 0, 0, 0, 1, 1,
+      -50.0, 50.0, -50.0, -1, 0, 0, 0, 0, 0, 0, 1, 1,
     ]);
 
     const indices = new Uint32Array([
@@ -300,13 +300,13 @@ export class UAssetManager {
   }
 
   private createPlanePrimitive(device: GPUDevice) {
-    // A standard 1.0 unit plane on XZ axis
+    // A standard 100.0 unit plane on XZ axis
     // Layout: Position (3f), Normal (3f), UV (2f), Tangent (4f)
     const vertices = new Float32Array([
-      -0.5, 0, -0.5, 0, 1, 0, 0, 0, 1, 0, 0, 1,
-      0.5, 0, -0.5, 0, 1, 0, 1, 0, 1, 0, 0, 1,
-      0.5, 0, 0.5, 0, 1, 0, 1, 1, 1, 0, 0, 1,
-      -0.5, 0, 0.5, 0, 1, 0, 0, 1, 1, 0, 0, 1
+      -50.0, 0, -50.0, 0, 1, 0, 0, 0, 1, 0, 0, 1,
+      50.0, 0, -50.0, 0, 1, 0, 1, 0, 1, 0, 0, 1,
+      50.0, 0, 50.0, 0, 1, 0, 1, 1, 1, 0, 0, 1,
+      -50.0, 0, 50.0, 0, 1, 0, 0, 1, 1, 0, 0, 1
     ]);
     const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
     this.assets.set('Primitive_Plane', new UAsset('Primitive_Plane', device, vertices, indices));

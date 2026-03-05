@@ -17,6 +17,13 @@ export class World extends UObject {
    */
   public selectedActorId: string | null = null;
 
+  public bShowGrid: boolean = true;
+  public gridConfig = {
+    size: 1.0,
+    color: [0.5, 0.5, 0.5, 1.0],
+    opacity: 0.8
+  };
+
   private isBegunPlay: boolean = false;
 
   constructor(name: string = 'World') {

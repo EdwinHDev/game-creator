@@ -14,12 +14,12 @@ export class UCameraComponent extends USceneComponent {
   /**
    * Near clipping plane.
    */
-  public near: number = 0.1;
+  public near: number = 10.0;
 
   /**
    * Far clipping plane.
    */
-  public far: number = 1000.0;
+  public far: number = 200000.0;
 
   constructor(owner: AActor, name: string = 'CameraComponent') {
     super(owner, name);

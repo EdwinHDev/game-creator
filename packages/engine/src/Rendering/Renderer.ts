@@ -242,7 +242,7 @@ export class Renderer {
           }
         }]
       },
-      primitive: { topology: 'line-list' },
+      primitive: { topology: 'triangle-strip' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
@@ -593,7 +593,7 @@ export class Renderer {
   }
 
   private executeGridPass(frameData: FrameData): void {
-    if (!this.gridPipeline || !this.sceneBindGroup) return;
+    if (!this.gridPipeline || !this.sceneBindGroup || !frameData.world.bShowGrid) return;
     const { commandEncoder, textureView } = frameData;
 
     const pass = commandEncoder.beginRenderPass({
@@ -612,7 +612,7 @@ export class Renderer {
     pass.setPipeline(this.gridPipeline);
     // Group 0: Camera and Global Data (Same as main pass but at index 0 for this pipeline)
     pass.setBindGroup(0, this.sceneBindGroup!);
-    pass.draw(6); // Full-screen quad (2 triangles)
+    pass.draw(4); // Full-screen quad (triangle strip)
     pass.end();
   }
 
