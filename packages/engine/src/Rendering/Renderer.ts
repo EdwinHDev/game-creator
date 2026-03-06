@@ -213,16 +213,16 @@ export class Renderer {
     const skyModule = this.device.createShaderModule({ code: skyShader });
 
     this.shadowTexture = this.device.createTexture({
-      size: [2048, 2048], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      size: [2048, 2048], format: 'depth32float', usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
     });
     this.shadowView = this.shadowTexture.createView();
-    this.shadowSampler = this.device.createSampler({ compare: 'less', magFilter: 'linear', minFilter: 'linear' });
+    this.shadowSampler = this.device.createSampler({ compare: 'less-equal', magFilter: 'linear', minFilter: 'linear' });
 
     this.shadowPipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: shadowModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
+      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth32float' },
     });
 
     this.skyPipeline = this.device.createRenderPipeline({
@@ -533,11 +533,9 @@ export class Renderer {
 
     const lightViewProj = mat4.create();
     const lightProj = mat4.create();
-    mat4.ortho(lightProj, -5000, 5000, -5000, 5000, NEAR_PLANE, FAR_PLANE);
-
-    // WebGPU NDC: clip-space Z in [0,1]. gl-matrix ortho gives [-1,1] so remap.
-    const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
-    mat4.multiply(lightProj, fixMatrix, lightProj);
+    // Use orthoZO (Zero-to-One) for native WebGPU depth [0, 1] range.
+    // This eliminates the need for manual remapping and prevents rounding artifacts.
+    (mat4 as any).orthoZO(lightProj, -5000, 5000, -5000, 5000, NEAR_PLANE, FAR_PLANE);
 
     // Center the shadow frustum on the active camera position.
     const shadowCamCenter = mainCamera.owner.rootComponent?.relativeLocation ?? vec3.fromValues(0, 0, 0);
@@ -855,7 +853,7 @@ export class Renderer {
     // Phase 27: Roughness floor to prevent division-by-zero in Cook-Torrance denominator
     data[36] = Math.max(component.material?.roughness ?? 0.5, 0.002);
     data[37] = component.material?.metallic ?? 0.0;
-    data[38] = directionalLight ? directionalLight.shadowBias : 0.005; // dynamic shadowBias (default 0.005)
+    data[38] = directionalLight ? directionalLight.shadowBias : 0.002; // dynamic shadowBias
     // data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
 

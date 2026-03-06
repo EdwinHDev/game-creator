@@ -102,8 +102,8 @@ fn vs_main(
     
     // NORMAL BIAS: desplaza el punto de muestreo de sombra a lo largo de la normal
     // del mundo para evitar self-shadowing sin depender solo del depth bias.
-    // 1.5 UU es crítico para nuestra escala de metros (evita acne en superficies grandes).
-    let normalBiasOffset = out.worldNormal * 1.5;
+    // 2.0 UU (2 cm) - Balance restaurado para evitar Peter Panning excesivo.
+    let normalBiasOffset = out.worldNormal * 2.0;
     let shadowPosInput = vec4<f32>(worldPosVec4.xyz + normalBiasOffset, 1.0);
     out.shadowPos = scene.lightViewProj * shadowPosInput;
     
