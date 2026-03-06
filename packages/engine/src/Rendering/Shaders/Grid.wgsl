@@ -5,6 +5,7 @@ struct SceneUniforms {
     sunDirection: vec4<f32>,
     sunColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
+    gridParams: vec4<f32>, // rgb = base color, w = opacity
 };
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
@@ -42,8 +43,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ray_dir = normalize(p_world - ray_origin);
     
     // Intersect ray with ground plane (Y = 0)
-    // Ray Equation: P = O + t*D
-    // Plane Equation: P.y = 0  => O.y + t*D.y = 0  => t = -O.y / D.y
     let t = -ray_origin.y / ray_dir.y;
     
     // Discard if we are looking above the horizon or the hit is behind us
@@ -66,11 +65,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let isX = 1.0 - saturate(abs(world_hit.z) / fwidth(world_hit.z));
     let isZ = 1.0 - saturate(abs(world_hit.x) / fwidth(world_hit.x));
     
-    var finalColor = vec3<f32>(0.15); // Base dark gray grid
+    var finalColor = scene.gridParams.rgb; // Base dynamic grid color
     finalColor = mix(finalColor, vec3<f32>(1.0, 0.2, 0.2), isX);
     finalColor = mix(finalColor, vec3<f32>(0.2, 0.2, 1.0), isZ);
     
-    let alpha = color_val * fade;
+    let alpha = color_val * fade * scene.gridParams.w;
     if (alpha <= 0.01) { discard; }
     
     return vec4<f32>(finalColor, alpha);

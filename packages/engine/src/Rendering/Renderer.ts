@@ -6,6 +6,7 @@ import { UMeshComponent } from '../Components/UMeshComponent';
 import { USceneComponent } from '../Framework/USceneComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
 import { USkyLightComponent } from '../Components/USkyLightComponent';
+import { UGridComponent } from '../Components/UGridComponent';
 import { UAssetManager } from '../Core/Resources/UAssetManager';
 
 // Shader Imports (Vite ?raw)
@@ -554,6 +555,14 @@ export class Renderer {
     sceneData.set([...finalSunColor, 1], 40);
     // 44-59: lightViewProj
     sceneData.set(lightViewProj as any, 44);
+
+    // 60-63: Grid Params (rgb + opacity)
+    const gridComp = world.gridComponent;
+    if (gridComp) {
+      sceneData.set([gridComp.gridColor[0], gridComp.gridColor[1], gridComp.gridColor[2], gridComp.opacity], 60);
+    } else {
+      sceneData.set([0.15, 0.15, 0.15, 0.8], 60); // Fallback
+    }
 
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
