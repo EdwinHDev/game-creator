@@ -666,6 +666,7 @@ export class Renderer {
           else if (axisId === 5) axisColor = new Float32Array([1.0, 0.2, 0.5, 0.8]); // YZ Plane (Red-ish)
           else if (axisId === 6) axisColor = new Float32Array([0.5, 1.0, 0.2, 0.8]); // ZX Plane (Green-ish)
           else if (axisId === 7) axisColor = new Float32Array([0.9, 0.9, 0.9, 1.0]); // Uniform (White-ish)
+          else if (axisId === 8) axisColor = new Float32Array([0.9, 0.9, 0.9, 0.8]); // Screen Rotation (White-ish)
 
           let alpha = 1.0;
           if (component instanceof USceneComponent && component.bIsHidden) continue;
@@ -830,6 +831,7 @@ export class Renderer {
     data[20] = axisId;
     data[21] = inflation;
     data[22] = opacityScale;
+    // data[23] is padding
 
     this.device!.queue.writeBuffer(buffer, 0, data);
 
@@ -940,7 +942,7 @@ export class Renderer {
           }
 
           if (axisId > 0) {
-            this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId, true);
+            this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId, true, false, 15.0);
           }
         }
       }

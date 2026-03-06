@@ -18,6 +18,12 @@ export class AGizmoActor extends AActor {
   private yzHandle: UMeshComponent;
   private zxHandle: UMeshComponent;
 
+  // Rotation handles
+  private xArc: UMeshComponent;
+  private yArc: UMeshComponent;
+  private zArc: UMeshComponent;
+  private screenArc: UMeshComponent;
+
   public hoverAxis: number = 0;
   public activeAxis: number = 0;
 
@@ -132,9 +138,46 @@ export class AGizmoActor extends AActor {
     this.zxHandle.relativeRotation = quat.fromEuler(quat.create(), 90, 0, 0);
     this.zxHandle.setupAttachment(dummyRoot);
     this.zxHandle.bIsHidden = true;
+
+    // --- Rotation Arcs ---
+    const arcScale = vec3.fromValues(0.8, 0.8, 0.8);
+    this.xArc = this.addComponent(UMeshComponent, 'X_Arc');
+    this.xArc.setAsset(UAssetManager.getAsset(EPrimitiveType.TORUS));
+    this.xArc.isGizmo = true;
+    this.xArc.pickingId = 1;
+    this.xArc.relativeScale = arcScale;
+    this.xArc.relativeRotation = quat.fromEuler(quat.create(), 0, 90, 0); // Face X
+    this.xArc.setupAttachment(dummyRoot);
+    this.xArc.bIsHidden = true;
+
+    this.yArc = this.addComponent(UMeshComponent, 'Y_Arc');
+    this.yArc.setAsset(UAssetManager.getAsset(EPrimitiveType.TORUS));
+    this.yArc.isGizmo = true;
+    this.yArc.pickingId = 2;
+    this.yArc.relativeScale = arcScale;
+    this.yArc.relativeRotation = quat.fromEuler(quat.create(), 90, 0, 0); // Face Y
+    this.yArc.setupAttachment(dummyRoot);
+    this.yArc.bIsHidden = true;
+
+    this.zArc = this.addComponent(UMeshComponent, 'Z_Arc');
+    this.zArc.setAsset(UAssetManager.getAsset(EPrimitiveType.TORUS));
+    this.zArc.isGizmo = true;
+    this.zArc.pickingId = 3;
+    this.zArc.relativeScale = arcScale;
+    // Z-facing torus is the default for our generator
+    this.zArc.setupAttachment(dummyRoot);
+    this.zArc.bIsHidden = true;
+
+    this.screenArc = this.addComponent(UMeshComponent, 'Screen_Arc');
+    this.screenArc.setAsset(UAssetManager.getAsset(EPrimitiveType.TORUS));
+    this.screenArc.isGizmo = true;
+    this.screenArc.pickingId = 8;
+    this.screenArc.relativeScale = vec3.fromValues(1.0, 1.0, 1.0);
+    this.screenArc.setupAttachment(dummyRoot);
+    this.screenArc.bIsHidden = true;
   }
 
-  public updateGizmoScale(cameraPosition: vec3, cameraFOV: number = 45) {
+  public updateGizmoScale(cameraPosition: vec3, cameraRotation: quat, cameraFOV: number = 45) {
     if (!this.rootComponent) return;
 
     const gizmoPosition = vec3.create();
@@ -146,51 +189,76 @@ export class AGizmoActor extends AActor {
     const scaleFactor = (distance * Math.tan(cameraFOV * 0.5 * (Math.PI / 180))) * 0.005;
 
     this.rootComponent.relativeScale = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
+
+    // --- AAA Screen Billboard ---
+    // The Screen Rotation gizmo (white ring) should always face the camera perfectly.
+    const invRootRotation = quat.invert(quat.create(), this.rootComponent.relativeRotation);
+    quat.multiply(this.screenArc.relativeRotation, invRootRotation, cameraRotation);
+
     this.rootComponent.updateWorldMatrix();
   }
 
   public setGizmoType(mode: 'translate' | 'scale' | 'rotate') {
     const isScale = mode === 'scale';
     const isTranslate = mode === 'translate';
+    const isRotate = mode === 'rotate';
     const tipAsset = UAssetManager.getAsset(isScale ? EPrimitiveType.BOX : EPrimitiveType.CONE);
 
-    // Scale mode uses cubes, translation uses cones
-    this.xAxisTip.setAsset(tipAsset);
-    this.yAxisTip.setAsset(tipAsset);
-    this.zAxisTip.setAsset(tipAsset);
+    // Show axial stems only for Translate/Scale
+    const showAxial = isScale || isTranslate;
+    this.xAxisStem.bIsHidden = !showAxial;
+    this.xAxisTip.bIsHidden = !showAxial;
+    this.yAxisStem.bIsHidden = !showAxial;
+    this.yAxisTip.bIsHidden = !showAxial;
+    this.zAxisStem.bIsHidden = !showAxial;
+    this.zAxisTip.bIsHidden = !showAxial;
 
-    // AAA proportions: refined stem thickness
-    const stemScale = vec3.fromValues(0.015, 1.0, 0.015);
-    this.xAxisStem.relativeScale = stemScale;
-    this.yAxisStem.relativeScale = stemScale;
-    this.zAxisStem.relativeScale = stemScale;
+    if (showAxial) {
+      this.xAxisTip.setAsset(tipAsset);
+      this.yAxisTip.setAsset(tipAsset);
+      this.zAxisTip.setAsset(tipAsset);
 
-    // Adjust tip scale and position
-    const tipScale = isScale ? vec3.fromValues(0.06, 0.06, 0.06) : vec3.fromValues(0.08, 0.2, 0.08);
-    const tipOffset = isScale ? 100 : 105;
+      const stemScale = vec3.fromValues(0.015, 1.0, 0.015);
+      this.xAxisStem.relativeScale = stemScale;
+      this.yAxisStem.relativeScale = stemScale;
+      this.zAxisStem.relativeScale = stemScale;
 
-    this.xAxisTip.relativeScale = tipScale;
-    this.xAxisTip.relativeLocation = vec3.fromValues(tipOffset, 0, 0);
+      const tipScale = isScale ? vec3.fromValues(0.06, 0.06, 0.06) : vec3.fromValues(0.08, 0.2, 0.08);
+      const tipOffset = isScale ? 100 : 105;
 
-    this.yAxisTip.relativeScale = tipScale;
-    this.yAxisTip.relativeLocation = vec3.fromValues(0, tipOffset, 0);
+      this.xAxisTip.relativeScale = tipScale;
+      this.xAxisTip.relativeLocation = vec3.fromValues(tipOffset, 0, 0);
+      this.yAxisTip.relativeScale = tipScale;
+      this.yAxisTip.relativeLocation = vec3.fromValues(0, tipOffset, 0);
+      this.zAxisTip.relativeScale = tipScale;
+      this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, tipOffset);
+    }
 
-    this.zAxisTip.relativeScale = tipScale;
-    this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, tipOffset);
-
-    // Show advanced handles for both Scale and Translate modes (AAA standard)
+    // Show advanced handles for both Scale and Translate modes
     const showAdvanced = isScale || isTranslate;
     this.uniformHandle.bIsHidden = !showAdvanced;
     this.xyHandle.bIsHidden = !showAdvanced;
     this.yzHandle.bIsHidden = !showAdvanced;
     this.zxHandle.bIsHidden = !showAdvanced;
 
-    // Apply colors to planar handles
     if (showAdvanced) {
-      if (this.xyHandle.material) this.xyHandle.material.baseColor = new Float32Array([0.2, 0.5, 1.0, 0.6]); // Blue-ish
-      if (this.yzHandle.material) this.yzHandle.material.baseColor = new Float32Array([1.0, 0.2, 0.5, 0.6]); // Red-ish
-      if (this.zxHandle.material) this.zxHandle.material.baseColor = new Float32Array([0.5, 1.0, 0.2, 0.6]); // Green-ish
-      if (this.uniformHandle.material) this.uniformHandle.material.baseColor = new Float32Array([0.9, 0.9, 0.9, 0.8]); // White
+      if (this.xyHandle.material) this.xyHandle.material.baseColor = new Float32Array([0.2, 0.5, 1.0, 0.6]);
+      if (this.yzHandle.material) this.yzHandle.material.baseColor = new Float32Array([1.0, 0.2, 0.5, 0.6]);
+      if (this.zxHandle.material) this.zxHandle.material.baseColor = new Float32Array([0.5, 1.0, 0.2, 0.6]);
+      if (this.uniformHandle.material) this.uniformHandle.material.baseColor = new Float32Array([0.9, 0.9, 0.9, 0.8]);
+    }
+
+    // --- Rotation Arcs ---
+    this.xArc.bIsHidden = !isRotate;
+    this.yArc.bIsHidden = !isRotate;
+    this.zArc.bIsHidden = !isRotate;
+    this.screenArc.bIsHidden = !isRotate;
+
+    if (isRotate) {
+      if (this.xArc.material) this.xArc.material.baseColor = new Float32Array([1.0, 0.2, 0.2, 1.0]);
+      if (this.yArc.material) this.yArc.material.baseColor = new Float32Array([0.2, 1.0, 0.2, 1.0]);
+      if (this.zArc.material) this.zArc.material.baseColor = new Float32Array([0.2, 0.2, 1.0, 1.0]);
+      if (this.screenArc.material) this.screenArc.material.baseColor = new Float32Array([0.9, 0.9, 0.9, 0.5]);
     }
   }
 }

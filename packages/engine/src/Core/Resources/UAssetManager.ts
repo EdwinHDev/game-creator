@@ -13,7 +13,8 @@ export enum EPrimitiveType {
   PLANE = 'Primitive_Plane',
   CYLINDER = 'Primitive_Cylinder',
   CONE = 'Primitive_Cone',
-  CAPSULE = 'Primitive_Capsule'
+  CAPSULE = 'Primitive_Capsule',
+  TORUS = 'Primitive_Torus'
 }
 
 export class UAssetManager {
@@ -69,6 +70,7 @@ export class UAssetManager {
     instance.createCylinderPrimitive(device);
     instance.createConePrimitive(device);
     instance.createCapsulePrimitive(device);
+    instance.createTorusPrimitive(device);
     Logger.info("[UAssetManager] Todos los primitivos inicializados en GPU.");
   }
 
@@ -336,6 +338,48 @@ export class UAssetManager {
     ]);
     const indices = new Uint32Array([0, 3, 2, 0, 2, 1]);
     this.assets.set(EPrimitiveType.PLANE, new UAsset(EPrimitiveType.PLANE, device, vertices, indices));
+  }
+
+  private createTorusPrimitive(device: GPUDevice) {
+    const radialSegments = 64;
+    const tubularSegments = 16;
+    const radius = 100.0;
+    const tubeRadius = 0.8;
+
+    const vertices: number[] = [];
+    const indices: number[] = [];
+
+    for (let j = 0; j <= radialSegments; j++) {
+      for (let i = 0; i <= tubularSegments; i++) {
+        const u = (i / tubularSegments) * Math.PI * 2;
+        const v = (j / radialSegments) * Math.PI * 2;
+
+        const x = (radius + tubeRadius * Math.cos(u)) * Math.cos(v);
+        const y = (radius + tubeRadius * Math.cos(u)) * Math.sin(v);
+        const z = tubeRadius * Math.sin(u);
+
+        const nx = Math.cos(u) * Math.cos(v);
+        const ny = Math.cos(u) * Math.sin(v);
+        const nz = Math.sin(u);
+
+        // Position (3), Normal (3), UV (2), Tangent (4)
+        vertices.push(x, y, z, nx, ny, nz, j / radialSegments, i / tubularSegments, -Math.sin(v), Math.cos(v), 0, 1.0);
+      }
+    }
+
+    for (let j = 1; j <= radialSegments; j++) {
+      for (let i = 1; i <= tubularSegments; i++) {
+        const a = (tubularSegments + 1) * j + i - 1;
+        const b = (tubularSegments + 1) * (j - 1) + i - 1;
+        const c = (tubularSegments + 1) * (j - 1) + i;
+        const d = (tubularSegments + 1) * j + i;
+
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+      }
+    }
+
+    this.assets.set(EPrimitiveType.TORUS, new UAsset(EPrimitiveType.TORUS, device, new Float32Array(vertices), new Uint32Array(indices)));
   }
 
   /**

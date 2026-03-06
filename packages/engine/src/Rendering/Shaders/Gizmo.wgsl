@@ -2,6 +2,7 @@ struct Uniforms {
     mvpMatrix: mat4x4<f32>,
     color: vec4<f32>,
     axisId: f32,
+    inflation: f32,
 }
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 
@@ -11,9 +12,13 @@ struct VertexOut {
 }
 
 @vertex
-fn vs_main(@location(0) pos: vec3<f32>) -> VertexOut {
+fn vs_main(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>) -> VertexOut {
     var out: VertexOut;
-    out.pos = uniforms.mvpMatrix * vec4<f32>(pos, 1.0);
+    var inflated_pos = pos;
+    if (uniforms.inflation > 0.0) {
+        inflated_pos = pos + normal * uniforms.inflation;
+    }
+    out.pos = uniforms.mvpMatrix * vec4<f32>(inflated_pos, 1.0);
     out.color = uniforms.color;
     return out;
 }

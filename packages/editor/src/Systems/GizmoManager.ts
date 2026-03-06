@@ -101,47 +101,56 @@ export class GizmoManager {
     if (gizmoId === 1) bestAxis = 'X';
     else if (gizmoId === 2) bestAxis = 'Y';
     else if (gizmoId === 3) bestAxis = 'Z';
-    else if (gizmoId === 4) bestAxis = 'X'; // XY (X primary)
-    else if (gizmoId === 5) bestAxis = 'Y'; // YZ (Y primary)
-    else if (gizmoId === 6) bestAxis = 'Z'; // ZX (Z primary)
-    else if (gizmoId === 7) bestAxis = 'X'; // Uniform (X primary)
+    else if (gizmoId >= 4 && gizmoId <= 7) bestAxis = (gizmoId === 5 ? 'Y' : (gizmoId === 6 ? 'Z' : 'X'));
+    else if (gizmoId === 8) bestAxis = 'Z'; // Dummy axis for screen rotation
 
-    if (bestAxis) {
+    if (bestAxis || gizmoId === 8) {
       this.isDraggingGizmo = true;
       this.dragAxis = bestAxis;
       if (this.gizmoActor) {
         this.gizmoActor.activeAxis = gizmoId;
       }
-      const pos = this._selectedActor.rootComponent.relativeLocation;
+      const root = this._selectedActor.rootComponent;
+      const pos = root.relativeLocation;
       vec3.copy(this.dragStartActorPos, pos);
-      vec3.copy(this.dragStartActorScale, this._selectedActor.rootComponent.relativeScale);
-      quat.copy(this.dragStartActorRotation, this._selectedActor.rootComponent.relativeRotation);
+      vec3.copy(this.dragStartActorScale, root.relativeScale);
+      quat.copy(this.dragStartActorRotation, root.relativeRotation);
 
-      // Initialize drag start hit point for calculations in onMouseMove
       const width = canvas.width;
       const height = canvas.height;
       const viewProj = renderer.viewProjMatrix;
       const ray = getRayFromCamera(mouseX, mouseY, width, height, viewProj);
 
       if (this.currentTransformMode !== 'rotate') {
-        const planeNormal = this.getDragPlaneNormal(bestAxis);
+        const planeNormal = this.getDragPlaneNormal(bestAxis!);
         const hit = intersectRayPlane(ray.origin, ray.direction, pos, planeNormal);
         if (hit) {
           vec3.copy(this.dragStartMouseHit, hit);
         }
       } else {
-        // For rotation, initialize drag start vector from center to hit point
+        // Rotation initialization
         const worldAxis = vec3.create();
-        const axisDir = vec3.fromValues(bestAxis === 'X' ? 1 : 0, bestAxis === 'Y' ? 1 : 0, bestAxis === 'Z' ? 1 : 0);
-        if (this.transformSpace === 'local') {
-          vec3.transformQuat(worldAxis, axisDir, this.dragStartActorRotation);
+        if (gizmoId === 8) {
+          // Screen Rotation: Axis is camera forward
+          vec3.set(worldAxis, viewProj[2], viewProj[6], viewProj[10]);
+          vec3.normalize(worldAxis, worldAxis);
         } else {
-          vec3.copy(worldAxis, axisDir);
+          const axisDir = vec3.fromValues(bestAxis === 'X' ? 1 : 0, bestAxis === 'Y' ? 1 : 0, bestAxis === 'Z' ? 1 : 0);
+          if (this.transformSpace === 'local') {
+            vec3.transformQuat(worldAxis, axisDir, this.dragStartActorRotation);
+          } else {
+            vec3.copy(worldAxis, axisDir);
+          }
         }
+
         const hit = intersectRayPlane(ray.origin, ray.direction, pos, worldAxis);
         if (hit) {
           vec3.subtract(this.dragStartVector, hit, pos);
           vec3.copy(this.dragStartMouseHit, hit);
+        } else if (gizmoId === 8) {
+          // Fallback for screen rotation if hit fails (paralelor plane)
+          // Use screen space vector directly if needed, but plane intersection usually works for cam forward
+          vec3.set(this.dragStartVector, mouseX - width / 2, mouseY - height / 2, 0);
         }
       }
     }
@@ -172,45 +181,45 @@ export class GizmoManager {
       const pos = root.relativeLocation;
 
       if (this.currentTransformMode === 'rotate') {
-        const planeNormal = this.getDragPlaneNormal(this.dragAxis);
-        const hit = intersectRayPlane(ray.origin, ray.direction, this.dragStartActorPos, planeNormal);
+        const activeId = this.gizmoActor?.activeAxis ?? 0;
+        const worldAxis = vec3.create();
 
-        if (hit) {
-          const delta = vec3.create();
-          vec3.subtract(delta, hit, this.dragStartMouseHit);
-          const startRot = this.dragStartActorRotation;
+        if (activeId === 8) {
+          // Screen Rotation: Axis is camera forward vector
+          const camRot = this.getCameraRotation();
+          vec3.set(worldAxis, 0, 0, -1);
+          vec3.transformQuat(worldAxis, worldAxis, camRot);
+          vec3.normalize(worldAxis, worldAxis);
+        } else {
           const axisDir = vec3.fromValues(
             this.dragAxis === 'X' ? 1 : 0,
             this.dragAxis === 'Y' ? 1 : 0,
             this.dragAxis === 'Z' ? 1 : 0
           );
-          const worldAxis = vec3.create();
           if (this.transformSpace === 'local') {
-            vec3.transformQuat(worldAxis, axisDir, startRot);
+            vec3.transformQuat(worldAxis, axisDir, this.dragStartActorRotation);
           } else {
             vec3.copy(worldAxis, axisDir);
           }
-
-          const hitPlane = intersectRayPlane(ray.origin, ray.direction, pos, worldAxis);
-          if (hitPlane) {
-            const currentVec = vec3.create();
-            vec3.subtract(currentVec, hitPlane, pos);
-            const v1 = vec3.create(); vec3.normalize(v1, this.dragStartVector);
-            const v2 = vec3.create(); vec3.normalize(v2, currentVec);
-            let dot = Math.max(-1, Math.min(1, vec3.dot(v1, v2)));
-            let angle = Math.acos(dot);
-            const cross = vec3.create();
-            vec3.cross(cross, v1, v2);
-            if (vec3.dot(worldAxis, cross) < 0) angle = -angle;
-
-            const deltaQuat = quat.create();
-            quat.setAxisAngle(deltaQuat, worldAxis, angle);
-            quat.multiply(root.relativeRotation, deltaQuat, startRot);
-            quat.normalize(root.relativeRotation, root.relativeRotation);
-          }
         }
-        EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
-        this.update();
+
+        const hitPlane = intersectRayPlane(ray.origin, ray.direction, pos, worldAxis);
+        if (hitPlane) {
+          const currentVec = vec3.create();
+          vec3.subtract(currentVec, hitPlane, pos);
+          const v1 = vec3.create(); vec3.normalize(v1, this.dragStartVector);
+          const v2 = vec3.create(); vec3.normalize(v2, currentVec);
+          let dot = Math.max(-1, Math.min(1, vec3.dot(v1, v2)));
+          let angle = Math.acos(dot);
+          const cross = vec3.create();
+          vec3.cross(cross, v1, v2);
+          if (vec3.dot(worldAxis, cross) < 0) angle = -angle;
+
+          const deltaQuat = quat.create();
+          quat.setAxisAngle(deltaQuat, worldAxis, angle);
+          quat.multiply(root.relativeRotation, deltaQuat, this.dragStartActorRotation);
+          quat.normalize(root.relativeRotation, root.relativeRotation);
+        }
       } else if (this.currentTransformMode === 'translate' || this.currentTransformMode === 'scale') {
         const moveAxis = vec3.fromValues(
           this.dragAxis === 'X' ? 1 : 0,
@@ -306,9 +315,9 @@ export class GizmoManager {
             }
           }
         }
-        EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
-        this.update();
       }
+      EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
+      this.update();
     } else if (this.isDraggingSolarHandle && this._selectedActor?.rootComponent) {
       // Phase 20.4/26.2: Drag Solar Handle Logic
       const pos = this._selectedActor.rootComponent.relativeLocation;
@@ -374,6 +383,7 @@ export class GizmoManager {
     const pos = root.relativeLocation;
     const rot = root.relativeRotation;
     const camPos = this.getCameraPosition();
+    const camRot = this.getCameraRotation();
     const scaleFactor = this.calculateScaleFactor(pos);
 
     if (this._selectedActor.getComponent(UDirectionalLightComponent)) {
@@ -422,7 +432,7 @@ export class GizmoManager {
         this.gizmoActor.bIsHidden = false;
         vec3.copy(this.gizmoActor.rootComponent!.relativeLocation, pos);
         quat.copy(this.gizmoActor.rootComponent!.relativeRotation, this.transformSpace === 'local' ? rot : quat.create());
-        this.gizmoActor.updateGizmoScale(camPos);
+        this.gizmoActor.updateGizmoScale(camPos, camRot);
       }
 
       const hidePos = vec3.fromValues(99999, 99999, 99999);
@@ -503,6 +513,13 @@ export class GizmoManager {
     if (!activeWorld) return vec3.fromValues(0, 10, 20);
     const cameraActor = activeWorld.actors.find(a => a.getComponent(UCameraComponent));
     return cameraActor?.rootComponent?.relativeLocation || vec3.fromValues(0, 10, 20);
+  }
+
+  private getCameraRotation(): quat {
+    const activeWorld = Engine.getInstance().getActiveWorld();
+    if (!activeWorld) return quat.create();
+    const cameraActor = activeWorld.actors.find(a => a.getComponent(UCameraComponent));
+    return cameraActor?.rootComponent?.relativeRotation || quat.create();
   }
 
   private getDragPlaneNormal(axis: 'X' | 'Y' | 'Z'): vec3 {
