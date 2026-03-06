@@ -11,7 +11,7 @@ export class UDirectionalLightComponent extends USceneComponent {
   public intensity: number = 10.0;
   public bUsedAsAtmosphereSunLight: boolean = true;
   public castShadows: boolean = true;
-  public shadowDistance: number = 10000.0; // 100 metros en UU
+  public shadowDistance: number = 5000.0; // 50 metros en UU (spec: LIGHTING_ARCHITECTURE.md §3.A)
   public shadowBias: number = 0.002;
 
   constructor(owner: AActor, name: string = 'DirectionalLight') {

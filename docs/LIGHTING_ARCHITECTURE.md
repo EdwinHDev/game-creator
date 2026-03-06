@@ -1,63 +1,68 @@
-# 💡 Game Creator - Arquitectura de Iluminación y Ecosistema Visual
+# 🌌 LIGHTING_ARCHITECTURE.md (v3.0 - Unreal Engine Standard)
 
-## 1. Filosofía Base (El Modelo Unreal Engine)
-La iluminación en Game Creator se basa en el **Physically Based Rendering (PBR)** y la **Iluminación Basada en Imágenes (IBL)**. El objetivo es que ningún objeto tenga sombras negras puras (irrealistas), sino que "respire" el color del cielo y el entorno.
+## 1. Filosofía Sistémica
+La iluminación en *Game Creator* no es un post-proceso, sino un **Pipeline de Datos Físicos**. Ningún objeto debe tener sombras negras puras; cada píxel debe responder a la interacción entre la luz directa, la dispersión atmosférica y la luz ambiental (IBL).
 
-- **Mundos Estériles:** Por defecto, un `World` no tiene luz. Si el usuario no añade componentes de iluminación, el mundo se renderiza en total oscuridad.
-- **Interconectividad:** Los sistemas de atmósfera, sol y luz ambiental trabajan en conjunto para generar un resultado visual coherente.
+### Directivas de Escala
+- **100 Unidades de Motor (UU) = 1 Metro**.
+- Todas las intensidades lumínicas y cálculos de sombras se rigen por esta escala.
 
-## 2. Los 3 Pilares Atmosféricos
+---
 
-### A. Sky Atmosphere (El Motor Físico)
-En lugar de una textura fija, el cielo es un shader procedimental que simula la interacción de la luz con la atmósfera.
-- **Rayleigh Scattering:** Crea el degradado azul característico del cielo durante el día.
-- **Mie Scattering:** Crea el brillo blanquecino (glare) alrededor del sol.
-- **Dinamsmo:** El color del cielo se recalcula en tiempo real basado en el vector de dirección del sol.
+## 2. El Ecosistema Atmosférico (Visual del Cielo)
+Sustituimos los fondos planos por un simulador planetario basado en física.
+
+### A. Sky Atmosphere System
+- **Modelo Físico:** Implementación de dispersión de **Rayleigh** (genera el azul del cielo) y **Mie** (bruma y halo solar).
+- **Shader Procedimental (`Sky.wgsl`):** Calcula el color del cenit, el horizonte y el disco solar en tiempo real basándose exclusivamente en el vector de dirección del sol. No utiliza texturas estáticas.
+- **Renderizado:** Se dibuja como una esfera infinita antes que cualquier otro objeto, sin escribir en el Z-Buffer.
 
 ### B. Directional Light (El Sol)
-Actúa como la fuente de luz primaria y el controlador del ciclo día/noche.
-- **Propiedad Clave:** `bUsedAsAtmosphereSunLight`. Al rotar este actor, se actualiza el vector `SunDirection` en el shader de atmósfera.
-- **Horizonte:** Si el sol baja del horizonte, el cielo entra en modo noche automáticamente, cambiando la dispersión de luz.
+- **Actor Controlador:** Actúa como el cerebro del cielo mediante la bandera `bUsedAsAtmosphereSunLight`.
+- **Sincronización:** Su rotación (`FRotator`) determina la posición del sol en el firmamento. Al bajar del horizonte, el sistema transiciona automáticamente a modo noche.
 
-### C. Sky Light (Iluminación Ambiental)
-Este componente es el que "baña" los objetos con la luz del entorno para que las sombras tengan color y detalle.
-- **SourceType - Captured Scene:** El motor toma el render del Sky Atmosphere y genera un mapa de irradiación en tiempo real.
-- **SourceType - Specified Cubemap (HDRI):** El usuario carga un archivo `.hdr` para definir la iluminación ambiental y los reflejos.
-- **Salida Técnica:** Genera un **Irradiance Map** (para el color de las sombras) y un **Prefiltered Env Map** (para los reflejos metálicos).
+---
 
-## 3. Pipeline de Renderizado (PBR Workflow)
-Para evitar una iluminación plana, el shader `Standard.wgsl` sigue esta ecuación de energía:
-`Color Final = (Luz Directa * Sombras) + (Luz Ambiental * Oclusión Ambiental) + Emisivo`
+## 3. Oclusión Profesional (Sombras)
+Las sombras deben ser estables, suaves y proporcionales a la escala del mundo.
 
-## 4. Hoja de Ruta de Implementación
+### A. Frustum Fitting Dinámico
+- La cámara de sombras no es estática. Debe **centrarse en la posición de la cámara del jugador** pero alinearse con la dirección del sol, asegurando que el área visible siempre tenga sombras de alta calidad.
+- **Área de Cobertura:** 50 metros a la redonda (5000 UU) como estándar para el frustum ortográfico.
 
-### Fase 1: Limpieza y Entorno Cero
-- [x] Eliminar luces hardcodeadas en `Renderer.ts`.
-- [x] Asegurar que si el mundo no tiene luces, se vea negro.
+### B. Suavizado Avanzado (PCF)
+- **Percentage Closer Filtering (PCF):** El shader `Standard.wgsl` realiza un muestreo de 4x4 (16 muestras) sobre el mapa de sombras para generar bordes suaves y cinematográficos.
 
-### Fase 2: Formalización de Componentes
-- [x] Estandarizar `UDirectionalLightComponent` con soporte para dirección y color.
-- [ ] Implementar el sistema de atmósfera procedimental (Rayleigh/Mie).
-- [ ] Crear el `USkyLightComponent` para el manejo de IBL.
+### C. Slope-Scaled Bias
+- El bias se calcula dinámicamente según la inclinación de la cara del objeto para eliminar el *Shadow Acne* sin provocar que las sombras "vuelen" (*Peter Panning*).
 
-### Fase 3: El Gestor de Luces (Light Buffer)
-- [ ] Crear el struct de datos de luces en `Renderer.ts` (`LightUniformBuffer`).
-- [ ] Refactorizar `Standard.wgsl` para leer desde este buffer dinámico mediante un bucle.
+---
 
-### Fase 4: Post-Proceso y Lookdev
-- [ ] Tone Mapping (ACES) para el manejo de altos rangos dinámicos.
-- [ ] Exposición automática y corrección Gamma sRGB.
+## 4. Image-Based Lighting - IBL (Luz Ambiental)
+Es el sistema encargado de bañar las sombras con el color del entorno.
 
-## 6. Sistema de Oclusión (Sombras)
+### A. USkyLightComponent
+- **Modo CapturedScene:** Toma un muestreo 360° del *Sky Atmosphere* para generar un **Irradiance Map** (difuso) y un **Specular Map** (reflejos).
+- **Modo HDRI:** Permite cargar archivos `.hdr` externos para iluminar escenas con datos fotorrealistas.
 
-Para mantener la coherencia con la escala 100UU, el motor implementa un sistema de sombras basado en el estándar de Unreal:
+---
 
-### A. Proyección Ortográfica Escalada
-- La cámara de sombras debe centrarse en la posición del espectador pero alinearse con la dirección del sol.
-- El frustum de sombra debe cubrir un radio de 50m (5000 UU) para asegurar que el entorno inmediato esté siempre ocluido.
+## 5. Pipeline PBR Unificado (Materiales)
+El shader `Standard.wgsl` debe aplicar la ecuación de energía profesional:
+`Color Final = (LuzDirecta * Sombras) + (LuzAmbiental * OclusiónAmbiental) + Emisivo`
 
-### B. Suavizado (PCF - Percentage Closer Filtering)
-- No permitiremos bordes de sombra "serruchados". El shader `Standard.wgsl` debe realizar un muestreo de 3x3 o 5x5 sobre la `shadowTexture` para promediar los bordes.
+---
 
-### C. Manejo de Bias Físico
-- Para evitar el "Shadow Acne" en superficies grandes, implementaremos un Bias basado en la pendiente (Slope-scaled Bias). Cuanto más plana sea la superficie respecto a la luz, mayor será el bias para evitar artefactos.
+## 6. Hoja de Ruta de Reconstrucción
+
+### Fase 1: Purga y Estandarización
+- [ ] Eliminar toda lógica de "suelo negro" o trucos visuales en los shaders.
+- [ ] Implementar la rotación del Sol basada en la matriz de mundo real del Actor.
+
+### Fase 2: Sombras Profesionales
+- [ ] Configurar la cámara de sombras para que siga a la cámara del usuario.
+- [ ] Implementar el filtro PCF de 16 muestras en el shader Standard.
+
+### Fase 3: Integración IBL
+- [ ] Activar la captura del SkyLight para que las sombras se tiñan del azul de la atmósfera.
+- [ ] Añadir soporte nativo para archivos HDRI.

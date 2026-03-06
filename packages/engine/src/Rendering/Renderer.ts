@@ -6,7 +6,6 @@ import { UMeshComponent } from '../Components/UMeshComponent';
 import { USceneComponent } from '../Framework/USceneComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
 import { USkyLightComponent } from '../Components/USkyLightComponent';
-import { UGridComponent } from '../Components/UGridComponent';
 import { UAssetManager } from '../Core/Resources/UAssetManager';
 
 // Shader Imports (Vite ?raw)
@@ -523,20 +522,55 @@ export class Renderer {
     const sunIntensity = mainSun ? Math.max(0.001, mainSun.intensity) : 1.0;
     const finalSunColor = [sunColor[0] * sunIntensity, sunColor[1] * sunIntensity, sunColor[2] * sunIntensity];
 
-    // Shadow calculation remains relevant
+    // -------------------------------------------------------------------
+    // Shadow Frustum — Centered on active camera, aligned with sun dir
+    // IMPORTANT: NEAR must be positive (1.0) to prevent depth precision loss.
+    // Negative near doubles the range and ruins the 24-bit depth distribution.
+    // -------------------------------------------------------------------
+    const SHADOW_RANGE = mainSun ? mainSun.shadowDistance : 5000.0;
+    const NEAR_PLANE = 1.0;
+    const FAR_PLANE = 15000.0;
+
     const lightViewProj = mat4.create();
     const lightProj = mat4.create();
-    mat4.ortho(lightProj, -5000, 5000, -5000, 5000, 1.0, 20000);
+    mat4.ortho(lightProj, -SHADOW_RANGE, SHADOW_RANGE, -SHADOW_RANGE, SHADOW_RANGE, NEAR_PLANE, FAR_PLANE);
+
+    // WebGPU NDC: clip-space Z in [0,1]. gl-matrix ortho gives [-1,1] so remap.
     const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
     mat4.multiply(lightProj, fixMatrix, lightProj);
 
-    const lightEye = mainSun ? mainSun.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 50, 0);
-    // Shadow target remains along the -TowardsSun vector (the Forward vector)
-    const sunForwardDir = vec3.scale(vec3.create(), towardsSun, -1);
+    // Center the shadow frustum on the active camera position.
+    const shadowCamCenter = mainCamera.owner.rootComponent?.relativeLocation ?? vec3.fromValues(0, 0, 0);
+    const sunForwardDir = vec3.scale(vec3.create(), towardsSun, -1); // sun-to-scene direction
+
+    // Place light eye far behind along the sun direction
+    const lightEye = vec3.scaleAndAdd(vec3.create(), shadowCamCenter, towardsSun, FAR_PLANE * 0.5);
     const lightTarget = vec3.add(vec3.create(), lightEye, sunForwardDir);
+
     let up = vec3.fromValues(0, 1, 0);
     if (Math.abs(vec3.dot(sunForwardDir, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
+
+    // --- TEXEL SNAPPING (Eliminates shadow flickering during camera movement) ---
+    const shadowMapSize = 2048.0;
+
+    // Project origin into light space to find misalignment
+    const shadowMatrix = mat4.multiply(mat4.create(), lightProj, lightView);
+    const shadowOrigin = vec3.transformMat4(vec3.create(), [0, 0, 0], shadowMatrix);
+
+    // Scale to texel units
+    shadowOrigin[0] *= (shadowMapSize / 2.0);
+    shadowOrigin[1] *= (shadowMapSize / 2.0);
+
+    // Calculate rounding offset to align to nearest texel
+    const roundedOrigin = [Math.round(shadowOrigin[0]), Math.round(shadowOrigin[1])];
+    const roundOffset = [(roundedOrigin[0] - shadowOrigin[0]) * (2.0 / shadowMapSize),
+    (roundedOrigin[1] - shadowOrigin[1]) * (2.0 / shadowMapSize)];
+
+    // Apply snap to the projection matrix
+    const snapMatrix = mat4.fromTranslation(mat4.create(), [roundOffset[0], roundOffset[1], 0]);
+    mat4.multiply(lightProj, snapMatrix, lightProj);
+
     mat4.multiply(lightViewProj, lightProj, lightView);
 
     const sceneData = new Float32Array(64); // 256 bytes (64 floats)

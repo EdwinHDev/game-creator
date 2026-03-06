@@ -100,7 +100,13 @@ fn vs_main(
     
     out.worldNormal = normalize(normalMatrix * normal);
     
-    out.shadowPos = scene.lightViewProj * worldPosVec4;
+    // NORMAL BIAS: desplaza el punto de muestreo de sombra a lo largo de la normal
+    // del mundo para evitar self-shadowing sin depender solo del depth bias.
+    // 2 UU ≈ 2 cm a escala 100UU=1m — suficiente sin Peter Panning.
+    let normalBiasOffset = out.worldNormal * 2.0;
+    let shadowPosInput = vec4<f32>(worldPosVec4.xyz + normalBiasOffset, 1.0);
+    out.shadowPos = scene.lightViewProj * shadowPosInput;
+    
     out.uv = uv;
     // Phase 34: Convert the 3D tangential direction to world space
     out.tangent = vec4<f32>((uniforms.modelMatrix * vec4<f32>(tangent.xyz, 0.0)).xyz, tangent.w);
@@ -140,8 +146,54 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
 }
 
 fn fetch_shadow(posUV: vec2<f32>, depth: f32, offset: vec2<f32>) -> f32 {
-    let size = 1.0 / 2048.0; // Tamaño del texel (Shadow map es 2048x2048)
-    return textureSampleCompare(shadowMap, shadowSampler, posUV + offset * size, depth);
+    let size = 1.0 / 2048.0;
+    // textureSampleCompareLevel: callable from non-uniform control flow
+    // offset is in texel units — caller controls the spread
+    return textureSampleCompareLevel(shadowMap, shadowSampler, posUV + offset * size, depth);
+}
+
+// --- POISSON DISK 16 PUNTOS ---
+// Distribución orgánica de muestras en un disco unitario.
+// Elimina las "capas" y el patrón cuadriculado del PCF regular.
+const poissonDisk = array<vec2<f32>, 32>(
+    vec2<f32>(-0.613392, 0.617481),
+    vec2<f32>(0.170299, -0.040254),
+    vec2<f32>(-0.299417, 0.791925),
+    vec2<f32>(0.645680, 0.493210),
+    vec2<f32>(-0.651784, 0.717887),
+    vec2<f32>(0.421346, 0.027031),
+    vec2<f32>(-0.817194, -0.271096),
+    vec2<f32>(-0.705474, -0.668203),
+    vec2<f32>(0.977050, -0.108615),
+    vec2<f32>(0.063326, 0.142369),
+    vec2<f32>(0.203528, 0.214331),
+    vec2<f32>(-0.667531, 0.326090),
+    vec2<f32>(-0.098422, -0.295755),
+    vec2<f32>(-0.885922, 0.215369),
+    vec2<f32>(0.566637, 0.605213),
+    vec2<f32>(0.039766, -0.396100),
+    vec2<f32>(0.751946, 0.179642),
+    vec2<f32>(0.191059, -0.829304),
+    vec2<f32>(0.512613, -0.457173),
+    vec2<f32>(-0.400329, 0.395781),
+    vec2<f32>(-0.042846, -0.672583),
+    vec2<f32>(0.669357, -0.252044),
+    vec2<f32>(-0.258013, -0.320436),
+    vec2<f32>(0.137837, 0.697412),
+    vec2<f32>(-0.781609, -0.197341),
+    vec2<f32>(-0.169123, 0.201201),
+    vec2<f32>(0.301323, -0.396561),
+    vec2<f32>(-0.627341, 0.612142),
+    vec2<f32>(0.563065, -0.640621),
+    vec2<f32>(0.246473, 0.311311),
+    vec2<f32>(-0.584144, -0.641551),
+    vec2<f32>(0.016335, -0.923412)
+);
+
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    var p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.xx + p3.yz) * p3.zy);
 }
 
 @fragment
@@ -176,15 +228,46 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let shadowCoords = in.shadowPos.xyz / in.shadowPos.w;
     let flipCorrect = vec2<f32>(0.5, -0.5);
     let posUV = shadowCoords.xy * flipCorrect + 0.5;
-    let depth = shadowCoords.z - uniforms.shadowBias;
-    
+    // --- SLOPE-SCALED BIAS ---
+    // NdotL dinámico: más bias cuando el ángulo es rasante (evita shadow acné)
+    let sunL      = normalize(lightData.lights[0].direction.xyz);
+    let NdotL_b   = max(dot(N, sunL), 0.0);
+    let slopeBias = uniforms.shadowBias + (1.0 - NdotL_b) * uniforms.shadowBias * 4.0;
+    let depth = shadowCoords.z - slopeBias;
+
+    // --- POISSON DISK SAMPLING — 32 MUESTRAS, ROTACIÓN PER-PÍXEL ---
+    // Rotamos el disco usando un ruido basado en la posición de pantalla (in.pos.xy).
+    // Esto rompe los patrones de "capas" y los convierte en un grano fino (dithering).
+    // Radio de 4.0: Balance fino entre suavidad y ruido visual.
+    let noise = hash22(in.pos.xy);
+    let angle = noise.x * 6.28318530718;
+    let s = sin(angle);
+    let c = cos(angle);
+    let rot = mat2x2<f32>(c, -s, s, c);
+
     var shadowVisibility = 0.0;
-    for (var y = -1.5; y <= 1.5; y += 1.0) {
-        for (var x = -1.5; x <= 1.5; x += 1.0) {
-            shadowVisibility += fetch_shadow(posUV, depth, vec2<f32>(x, y));
-        }
+    let poissonRadius = 4.0; 
+    for (var i = 0; i < 32; i++) {
+        let offset = rot * poissonDisk[i] * poissonRadius;
+        shadowVisibility += fetch_shadow(posUV, depth, offset);
     }
-    shadowVisibility /= 16.0;
+    shadowVisibility /= 32.0;
+
+    // --- SOFT SHADOW BOUNDARY (Elimina el recuadro marcado) ---
+    // Calculamos un factor de desvanecimiento suave cerca de los bordes del frustum [0.0, 1.0]
+    // OBS: Usamos posUV (rango 0-1) para que el fade coincida con el mapa.
+    let edgeFade = min(
+        min(smoothstep(0.0, 0.1, posUV.x), smoothstep(1.0, 0.9, posUV.x)),
+        min(smoothstep(0.0, 0.1, posUV.y), smoothstep(1.0, 0.9, posUV.y))
+    );
+    
+    // Desvanece la sombra hacia 1.0 (sin sombra) en los bordes para un look natural
+    shadowVisibility = mix(1.0, shadowVisibility, edgeFade);
+
+    // Boundary: Check simple para Z (Near/Far clipping)
+    let inFrustumZ = shadowCoords.z >= 0.0 && shadowCoords.z <= 1.0;
+    shadowVisibility = select(1.0, shadowVisibility, inFrustumZ);
+
 
     // Cook-Torrance PBR Base Reflection
     var F0 = vec3<f32>(0.04);

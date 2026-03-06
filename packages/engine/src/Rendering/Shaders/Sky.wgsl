@@ -59,11 +59,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     
     finalColor += (scene.sunColor.rgb * sunSize) + (scene.sunColor.rgb * sunGlow);
 
-    // Atmospheric Fog/Haze (Nadir softening)
-    let nadirT = saturate(-viewDir.y * 5.0);
-    let nadirColor = vec3<f32>(0.02, 0.03, 0.05);
-    finalColor = mix(finalColor, nadirColor, nadirT * 0.8);
-
     // HDR Tonemapping básico
     finalColor = 1.0 - exp(-finalColor * 1.5);
     
