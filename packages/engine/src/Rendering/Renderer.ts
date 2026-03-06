@@ -466,14 +466,23 @@ export class Renderer {
 
     const directionalLights: UDirectionalLightComponent[] = [];
     let skyLight: USkyLightComponent | null = null;
+    let atmosphereSunLight: UDirectionalLightComponent | null = null;
 
     for (const actor of world.actors) {
       if (directionalLights.length < 4) {
         const light = actor.getComponent(UDirectionalLightComponent);
-        if (light) directionalLights.push(light);
+        if (light) {
+          directionalLights.push(light);
+          if (light.bUsedAsAtmosphereSunLight && !atmosphereSunLight) {
+            atmosphereSunLight = light;
+          }
+        }
       }
       if (!skyLight) skyLight = actor.getComponent(USkyLightComponent);
     }
+
+    // Fallback if no specific atmosphere sun is designated
+    const mainSun = atmosphereSunLight || directionalLights[0] || null;
 
     // PASO C: Actualizar el envío de datos en 'prepareFrame' (Fase 3)
     const lightBufferData = new Float32Array(8 * 4); // 4 luces * 8 floats per Light
@@ -486,7 +495,7 @@ export class Renderer {
       const offset = i * 8;
       lightBufferData.set(lightForward, offset);
       lightBufferData.set([0], offset + 3); // padding
-      lightBufferData.set(light.color, offset + 4);
+      lightBufferData.set(light.lightColor, offset + 4);
       lightBufferData.set([light.intensity], offset + 7); // intensity in w
     }
     this.device.queue.writeBuffer(this.lightUniformBuffer!, 0, lightBufferData);
@@ -494,28 +503,34 @@ export class Renderer {
     const countBuffer = new Uint32Array([directionalLights.length]);
     this.device.queue.writeBuffer(this.lightUniformBuffer!, 128, countBuffer);
 
-    // Initial direction/color for shadow pass (using the first light)
-    const directionalLight = directionalLights[0] || null;
-    let lightDir = vec3.fromValues(-0.5, -1, -0.5);
-    if (directionalLight && directionalLight.owner.rootComponent) {
-      const worldMat = directionalLight.owner.rootComponent.getWorldMatrix();
-      lightDir = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
-      vec3.normalize(lightDir, lightDir);
+    // Global Sun Direction/Color for Atmosphere/Sky (Group 1, Binding 0)
+    let sunForward = vec3.fromValues(0, -1, 0);
+    if (mainSun && mainSun.owner.rootComponent) {
+      const worldMat = mainSun.owner.rootComponent.getWorldMatrix();
+      // Forward is -Z (columns are [0-3]=X, [4-7]=Y, [8-11]=Z)
+      sunForward = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
+      vec3.normalize(sunForward, sunForward);
     }
 
-    const lightColor = directionalLight ? new Float32Array(directionalLight.color) : new Float32Array([1, 1, 1]);
-    const lightIntensity = directionalLight ? directionalLight.intensity : 1.0;
+    // Zero Protection: Ensure no components are exactly zero to avoid NaNs in shaders
+    const protect = (v: number) => Math.abs(v) < 0.001 ? 0.001 * Math.sign(v || 1) : v;
+    const safeSunDir = [protect(sunForward[0]), protect(sunForward[1]), protect(sunForward[2])];
 
+    const sunColor = mainSun ? mainSun.lightColor : vec3.fromValues(1, 1, 1);
+    const sunIntensity = mainSun ? Math.max(0.001, mainSun.intensity) : 1.0;
+    const finalSunColor = [sunColor[0] * sunIntensity, sunColor[1] * sunIntensity, sunColor[2] * sunIntensity];
+
+    // Shadow calculation remains relevant
     const lightViewProj = mat4.create();
     const lightProj = mat4.create();
     mat4.ortho(lightProj, -20, 20, -20, 20, 0.1, 150);
     const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
     mat4.multiply(lightProj, fixMatrix, lightProj);
 
-    const lightEye = directionalLight ? directionalLight.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 5000, 0);
-    const lightTarget = vec3.add(vec3.create(), lightEye, lightDir);
+    const lightEye = mainSun ? mainSun.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 50, 0);
+    const lightTarget = vec3.add(vec3.create(), lightEye, sunForward);
     let up = vec3.fromValues(0, 1, 0);
-    if (Math.abs(vec3.dot(lightDir, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
+    if (Math.abs(vec3.dot(sunForward, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
     mat4.multiply(lightViewProj, lightProj, lightView);
 
@@ -529,11 +544,10 @@ export class Renderer {
     // 32-35: cameraPos
     const camPos = mainCamera.owner.rootComponent?.relativeLocation || vec3.create();
     sceneData.set([...camPos, 1.0], 32);
-    // 36-39: lightDir
-    sceneData.set([...lightDir, 0], 36);
-    // 40-43: lightColor (intensidad incluida)
-    const finalLightColor = lightColor.map(c => c * lightIntensity);
-    sceneData.set([...finalLightColor, 1], 40);
+    // 36-39: lightDir (sunDirection)
+    sceneData.set([...safeSunDir, 0], 36);
+    // 40-43: lightColor (sunColor con intensidad)
+    sceneData.set([...finalSunColor, 1], 40);
     // 44-59: lightViewProj
     sceneData.set(lightViewProj as any, 44);
 
@@ -565,7 +579,7 @@ export class Renderer {
       lightViewProj,
       mainCamera,
       aspectRatio,
-      directionalLight,
+      directionalLight: mainSun,
       skyLight,
       textureView,
       world,

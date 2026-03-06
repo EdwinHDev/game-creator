@@ -1,13 +1,13 @@
-struct SceneData {
-    viewProjMatrix: mat4x4<f32>,
-    invViewProjMatrix: mat4x4<f32>,
+struct SceneUniforms {
+    viewProj: mat4x4<f32>,
+    invViewProj: mat4x4<f32>,
     cameraPosition: vec4<f32>,
-    lightDirection: vec4<f32>,
-    lightColor: vec4<f32>,
+    sunDirection: vec4<f32>,
+    sunColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
 };
 
-@group(0) @binding(0) var<uniform> scene: SceneData;
+@group(0) @binding(0) var<uniform> scene: SceneUniforms;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -25,8 +25,8 @@ fn vs_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
     
     var output: VertexOutput;
     output.position = vec4<f32>(p, 0.0, 1.0);
-    output.nearPoint = unprojectPoint(p.x, p.y, 0.0, scene.invViewProjMatrix);
-    output.farPoint = unprojectPoint(p.x, p.y, 1.0, scene.invViewProjMatrix);
+    output.nearPoint = unprojectPoint(p.x, p.y, 0.0, scene.invViewProj);
+    output.farPoint = unprojectPoint(p.x, p.y, 1.0, scene.invViewProj);
     return output;
 }
 
@@ -42,51 +42,54 @@ struct FragmentOutput {
 
 @fragment
 fn fs_main(input: VertexOutput) -> FragmentOutput {
-    let t = -input.nearPoint.y / (input.farPoint.y - input.nearPoint.y);
-    if (t <= 0.0 || t > 10000.0) { discard; } // Límite físico de 100 metros (10,000 unidades)
+    let rayDir = input.farPoint - input.nearPoint;
+    let t = -input.nearPoint.y / rayDir.y;
     
-    let worldPos = input.nearPoint + t * (input.farPoint - input.nearPoint);
+    // Si el rayo no intersecta el plano Y=0 o está detrás de la cámara:
+    if (t <= 0.0 || isnan(t)) { discard; }
+    
+    let worldPos = input.nearPoint + t * rayDir;
     
     // Generar la grilla normal
-    let grid = max(makeGrid(worldPos, 0.01), makeGrid(worldPos, 0.001));
-    
-    // Colores base de los ejes (Iguales a los del Transform Gizmo)
-    let colorX = vec3<f32>(1.0, 0.2, 0.2); // Red (X Axis)
-    let colorZ = vec3<f32>(0.2, 0.2, 1.0); // Blue (Z Axis)
-    let gridColorBase = vec3<f32>(0.2, 0.2, 0.2);
-    
-    // Determinar si el píxel cae sobre algun eje central matemáticamente igual al grid
-    let fwidthX = fwidth(worldPos.x);
-    let fwidthZ = fwidth(worldPos.z);
-    
-    // El grosor matemático de la línea en makeGrid es abs(P) / fwidth(P) limitándose a 1.0 (1 pixel de degradado)
-    let isZAxis = 1.0 - min(abs(worldPos.x) / fwidthX, 1.0); // Z Axis (X=0)
-    let isXAxis = 1.0 - min(abs(worldPos.z) / fwidthZ, 1.0); // X Axis (Z=0)
-    
-    var finalColor = gridColorBase;
-    
-    // Mezclar colores si cae en un eje principal
-    if (isXAxis > 0.0) {
-        finalColor = mix(finalColor, colorX, isXAxis);
-    }
-    if (isZAxis > 0.0) {
-        finalColor = mix(finalColor, colorZ, isZAxis);
-    }
+    let grid = max(makeGrid(worldPos, 0.1), makeGrid(worldPos, 0.01));
     
     // Desvanecimiento radial suave desde la posicion de la cámara
     let d = distance(scene.cameraPosition.xz, worldPos.xz);
-    let horizonDistance = 4000.0; // Distancia donde la grid desaparece
-    let radialFade = clamp(1.0 - (d / horizonDistance), 0.0, 1.0);
-    // Transicion mas suave usando smoothstep para que se difumine placenteramente
-    let smoothFade = smoothstep(0.0, 1.0, radialFade);
+    let horizonDistance = 100.0; // Distancia donde la grid desaparece suavemente
+    let smoothFade = smoothstep(horizonDistance, horizonDistance * 0.5, d);
     
-    let clipPos = scene.viewProjMatrix * vec4<f32>(worldPos, 1.0);
+    let alpha = grid * smoothFade * 0.5;
+    
+    // Área invisible si no hay grid o estamos muy lejos
+    if (alpha <= 0.0) { discard; }
+    
+    // Colores base de los ejes
+    let colorX = vec3<f32>(0.9, 0.1, 0.1); // Red (X Axis)
+    let colorZ = vec3<f32>(0.1, 0.1, 0.9); // Blue (Z Axis)
+    let gridColorBase = vec3<f32>(0.3, 0.3, 0.3);
+    
+    // Resaltar ejes centrales (X=0 y Z=0)
+    let fwidthX = fwidth(worldPos.x);
+    let fwidthZ = fwidth(worldPos.z);
+    let isZAxis = 1.0 - min(abs(worldPos.x) / fwidthX, 1.0);
+    let isXAxis = 1.0 - min(abs(worldPos.z) / fwidthZ, 1.0);
+    
+    var finalColor = gridColorBase;
+    if (isXAxis > 0.0) { finalColor = mix(finalColor, colorX, isXAxis); }
+    if (isZAxis > 0.0) { finalColor = mix(finalColor, colorZ, isZAxis); }
+    
+    let clipPos = scene.viewProj * vec4<f32>(worldPos, 1.0);
     let depth = clipPos.z / clipPos.w;
     
     var output: FragmentOutput;
-    // Usamos el grid nativo garantizando que colorX/Z no cambien el alfa base
-    output.color = vec4<f32>(finalColor, grid * smoothFade * 0.5);
-    output.depth = depth;
+    if (alpha <= 0.0) {
+        output.color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        output.depth = 1.0;
+        discard;
+    } else {
+        output.color = vec4<f32>(finalColor, alpha);
+        output.depth = depth;
+    }
     return output;
 }
 

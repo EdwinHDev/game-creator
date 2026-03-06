@@ -83,6 +83,10 @@ export class DetailsPanel extends HTMLElement {
     this.updateInputValues();
   };
 
+  private sanitize(val: any): number {
+    return (isNaN(val) || val === undefined || val === null) ? 0 : val;
+  }
+
   private updateInputValues() {
     const root = this.currentActor.rootComponent;
 
@@ -90,17 +94,17 @@ export class DetailsPanel extends HTMLElement {
     const pX = this.querySelector('#pos-x') as HTMLInputElement;
     const pY = this.querySelector('#pos-y') as HTMLInputElement;
     const pZ = this.querySelector('#pos-z') as HTMLInputElement;
-    if (pX && document.activeElement !== pX) pX.value = root.relativeLocation[0].toFixed(2);
-    if (pY && document.activeElement !== pY) pY.value = root.relativeLocation[1].toFixed(2);
-    if (pZ && document.activeElement !== pZ) pZ.value = root.relativeLocation[2].toFixed(2);
+    if (pX && document.activeElement !== pX) pX.value = (this.sanitize(root.relativeLocation[0]) || 0).toFixed(2);
+    if (pY && document.activeElement !== pY) pY.value = (this.sanitize(root.relativeLocation[1]) || 0).toFixed(2);
+    if (pZ && document.activeElement !== pZ) pZ.value = (this.sanitize(root.relativeLocation[2]) || 0).toFixed(2);
 
     // Scale
     const sX = this.querySelector('#sca-x') as HTMLInputElement;
     const sY = this.querySelector('#sca-y') as HTMLInputElement;
     const sZ = this.querySelector('#sca-z') as HTMLInputElement;
-    if (sX && document.activeElement !== sX) sX.value = root.relativeScale[0].toFixed(2);
-    if (sY && document.activeElement !== sY) sY.value = root.relativeScale[1].toFixed(2);
-    if (sZ && document.activeElement !== sZ) sZ.value = root.relativeScale[2].toFixed(2);
+    if (sX && document.activeElement !== sX) sX.value = (this.sanitize(root.relativeScale[0]) || 0).toFixed(2);
+    if (sY && document.activeElement !== sY) sY.value = (this.sanitize(root.relativeScale[1]) || 0).toFixed(2);
+    if (sZ && document.activeElement !== sZ) sZ.value = (this.sanitize(root.relativeScale[2]) || 0).toFixed(2);
 
     // Rotation (Euler)
     const rotX = this.querySelector('#rot-x') as HTMLInputElement;
@@ -108,9 +112,9 @@ export class DetailsPanel extends HTMLElement {
     const rotZ = this.querySelector('#rot-z') as HTMLInputElement;
     if (rotX && rotY && rotZ) {
       const euler = this.quatToEuler(root.relativeRotation);
-      if (document.activeElement !== rotX) rotX.value = euler[0].toFixed(0);
-      if (document.activeElement !== rotY) rotY.value = euler[1].toFixed(0);
-      if (document.activeElement !== rotZ) rotZ.value = euler[2].toFixed(0);
+      if (document.activeElement !== rotX) rotX.value = (this.sanitize(euler[0]) || 0).toFixed(0);
+      if (document.activeElement !== rotY) rotY.value = (this.sanitize(euler[1]) || 0).toFixed(0);
+      if (document.activeElement !== rotZ) rotZ.value = (this.sanitize(euler[2]) || 0).toFixed(0);
     }
   }
 
@@ -235,7 +239,7 @@ export class DetailsPanel extends HTMLElement {
       </div>
       <div style="margin-bottom: 8px;">
         <label>Light Color</label>
-        <input type="color" id="light-color" value="${this.rgbToHex(light.color)}">
+        <input type="color" id="light-color" value="${this.rgbToHex(light.lightColor)}">
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
         <input type="checkbox" id="light-cast-shadows" ${light.castShadows ? 'checked' : ''} style="width: auto;">
@@ -262,7 +266,7 @@ export class DetailsPanel extends HTMLElement {
     intNum.addEventListener('input', (e) => updateIntensity((e.target as HTMLInputElement).value));
 
     colorInput.addEventListener('input', (e) => {
-      this.hexToRgb((e.target as HTMLInputElement).value, light.color);
+      this.hexToRgb((e.target as HTMLInputElement).value, light.lightColor);
     });
 
     shadowCheck.addEventListener('change', (e) => {

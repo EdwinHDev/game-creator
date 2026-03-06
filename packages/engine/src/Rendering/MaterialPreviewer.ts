@@ -61,7 +61,7 @@ export class MaterialPreviewer {
     // C. Luz Direccional (Studio Light - Key Light)
     const lightActor = this.world.spawnActor(AActor, 'PreviewLight', true);
     const sun = lightActor.addComponent(UDirectionalLightComponent);
-    sun.color = new Float32Array([1, 1, 1]);
+    sun.lightColor = vec3.fromValues(1, 1, 1);
     sun.intensity = 1.5;
     lightActor.rootComponent = sun;
 
