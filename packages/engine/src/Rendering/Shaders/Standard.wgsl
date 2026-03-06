@@ -102,8 +102,8 @@ fn vs_main(
     
     // NORMAL BIAS: desplaza el punto de muestreo de sombra a lo largo de la normal
     // del mundo para evitar self-shadowing sin depender solo del depth bias.
-    // 2 UU ≈ 2 cm a escala 100UU=1m — suficiente sin Peter Panning.
-    let normalBiasOffset = out.worldNormal * 2.0;
+    // 1.5 UU es crítico para nuestra escala de metros (evita acne en superficies grandes).
+    let normalBiasOffset = out.worldNormal * 1.5;
     let shadowPosInput = vec4<f32>(worldPosVec4.xyz + normalBiasOffset, 1.0);
     out.shadowPos = scene.lightViewProj * shadowPosInput;
     
@@ -190,10 +190,9 @@ const poissonDisk = array<vec2<f32>, 32>(
     vec2<f32>(0.016335, -0.923412)
 );
 
-fn hash22(p: vec2<f32>) -> vec2<f32> {
-    var p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.xx + p3.yz) * p3.zy);
+fn interleavedGradientNoise(fragCoord: vec2<f32>) -> f32 {
+    let v = vec3<f32>(0.06711056, 0.00583715, 52.9829189);
+    return fract(v.z * fract(dot(fragCoord, v.xy)));
 }
 
 @fragment
@@ -237,10 +236,10 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     // --- POISSON DISK SAMPLING — 32 MUESTRAS, ROTACIÓN PER-PÍXEL ---
     // Rotamos el disco usando un ruido basado en la posición de pantalla (in.pos.xy).
-    // Esto rompe los patrones de "capas" y los convierte en un grano fino (dithering).
+    // Interleaved Gradient Noise (IGN) proporciona un suavizado mucho más natural.
     // Radio de 4.0: Balance fino entre suavidad y ruido visual.
-    let noise = hash22(in.pos.xy);
-    let angle = noise.x * 6.28318530718;
+    let noise = interleavedGradientNoise(in.pos.xy);
+    let angle = noise * 6.28318530718;
     let s = sin(angle);
     let c = cos(angle);
     let rot = mat2x2<f32>(c, -s, s, c);
@@ -326,8 +325,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic) * 1.2;
 
-    // Restaurar el flujo PBR estándar
-    let finalColor = directLighting + ambientDiffuse + ambientReflection;
+    // Placeholder Ambient Light (Luz de rebote básica para que las sombras no sean negras)
+    let ambient = scene.sunColor.rgb * 0.1;
+
+    // Restaurar el flujo PBR estándar + Ambient
+    let finalColor = directLighting + ambientDiffuse + ambientReflection + ambient;
 
     // Aplica el gamma normal y fuerza la opacidad a 1.0 para depurar solidez
     return vec4<f32>(pow(clamp(finalColor, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2)), 1.0);

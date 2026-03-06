@@ -527,13 +527,13 @@ export class Renderer {
     // IMPORTANT: NEAR must be positive (1.0) to prevent depth precision loss.
     // Negative near doubles the range and ruins the 24-bit depth distribution.
     // -------------------------------------------------------------------
-    const SHADOW_RANGE = mainSun ? mainSun.shadowDistance : 5000.0;
-    const NEAR_PLANE = 1.0;
-    const FAR_PLANE = 15000.0;
+    // NEGATIVE NEAR: Near plane must be positive (100.0) to prevent depth precision loss.
+    const NEAR_PLANE = 100.0;
+    const FAR_PLANE = 8000.0;
 
     const lightViewProj = mat4.create();
     const lightProj = mat4.create();
-    mat4.ortho(lightProj, -SHADOW_RANGE, SHADOW_RANGE, -SHADOW_RANGE, SHADOW_RANGE, NEAR_PLANE, FAR_PLANE);
+    mat4.ortho(lightProj, -5000, 5000, -5000, 5000, NEAR_PLANE, FAR_PLANE);
 
     // WebGPU NDC: clip-space Z in [0,1]. gl-matrix ortho gives [-1,1] so remap.
     const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
@@ -855,7 +855,7 @@ export class Renderer {
     // Phase 27: Roughness floor to prevent division-by-zero in Cook-Torrance denominator
     data[36] = Math.max(component.material?.roughness ?? 0.5, 0.002);
     data[37] = component.material?.metallic ?? 0.0;
-    data[38] = directionalLight ? directionalLight.shadowBias : 0.002; // dynamic shadowBias
+    data[38] = directionalLight ? directionalLight.shadowBias : 0.005; // dynamic shadowBias (default 0.005)
     // data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
 
