@@ -33,6 +33,7 @@ interface FrameData {
   world: World;
   targetWidth: number;   // <--- NUEVO
   targetHeight: number;  // <--- NUEVO
+  environmentBindGroup: GPUBindGroup | null;
 }
 
 /**
@@ -60,6 +61,8 @@ export class Renderer {
   private gizmoGlowPipeline: GPURenderPipeline | null = null;
   private billboardPipeline: GPURenderPipeline | null = null;
   private billboardQuadBuffer: GPUBuffer | null = null;
+  private environmentBindGroupLayout: GPUBindGroupLayout | null = null;
+  private defaultSkyTexture: GPUTexture | null = null;
 
   // Cache/Pool
   private uniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -68,6 +71,7 @@ export class Renderer {
   private sceneUniformBuffer: GPUBuffer | null = null;
   private lightUniformBuffer: GPUBuffer | null = null;
   private sceneBindGroup: GPUBindGroup | null = null;
+  private environmentBindGroup: GPUBindGroup | null = null;
   private skyBindGroup: GPUBindGroup | null = null;
 
   // Phase 29.1 / 33.1: Textures
@@ -163,6 +167,22 @@ export class Renderer {
       { bytesPerRow: 16, rowsPerImage: 1 },
       [1, 1, 1]
     );
+
+    // --- DEFAULT CUBEMAP (Placeholder for Sky/Environment) ---
+    this.defaultSkyTexture = this.device.createTexture({
+      size: [1, 1, 6], // 6 faces for a cubemap
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+    });
+    // Write 1x1 black pixels to all 6 faces
+    for (let i = 0; i < 6; i++) {
+      this.device.queue.writeTexture(
+        { texture: this.defaultSkyTexture, origin: [0, 0, i] },
+        new Uint8Array([0, 0, 0, 255]),
+        { bytesPerRow: 4, rowsPerImage: 1 },
+        [1, 1, 1]
+      );
+    }
     // --------------------------------------------------------------------------
 
     const standardVertexBuffers: GPUVertexBufferLayout[] = [{
@@ -228,13 +248,19 @@ export class Renderer {
         { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }
+      ]
+    });
+
+    this.environmentBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: 'cube' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }
       ]
     });
 
     const pipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [materialBindGroupLayout, sceneBindGroupLayout]
+      bindGroupLayouts: [materialBindGroupLayout, sceneBindGroupLayout, this.environmentBindGroupLayout]
     });
 
     const gridPipelineLayout = this.device.createPipelineLayout({
@@ -333,8 +359,7 @@ export class Renderer {
         { binding: 0, resource: { buffer: this.sceneUniformBuffer } },
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
-        { binding: 3, resource: this.fallbackHDRTexture!.createView() },
-        { binding: 4, resource: { buffer: this.lightUniformBuffer! } }
+        { binding: 3, resource: { buffer: this.lightUniformBuffer! } }
       ],
     });
 
@@ -514,16 +539,23 @@ export class Renderer {
 
     this.device.queue.writeBuffer(this.sceneUniformBuffer!, 0, sceneData);
 
-    // Update scene bind group to use SkyLight HDRI if available
-    const hdrView = (skyLight && skyLight.envView) ? skyLight.envView : this.fallbackHDRTexture!.createView();
+    // Phase 63.3: Environment Bind Group (Group 2)
+    const envView = (skyLight && skyLight.envView) ? skyLight.envView : this.defaultSkyTexture!.createView({ dimension: 'cube' });
+    this.environmentBindGroup = this.device.createBindGroup({
+      layout: this.environmentBindGroupLayout!,
+      entries: [
+        { binding: 0, resource: envView },
+        { binding: 1, resource: this.defaultSampler! }
+      ]
+    });
+
     this.sceneBindGroup = this.device.createBindGroup({
       layout: this.trianglePipeline!.getBindGroupLayout(1),
       entries: [
         { binding: 0, resource: { buffer: this.sceneUniformBuffer! } },
         { binding: 1, resource: this.shadowView! },
         { binding: 2, resource: this.shadowSampler! },
-        { binding: 3, resource: hdrView },
-        { binding: 4, resource: { buffer: this.lightUniformBuffer! } }
+        { binding: 3, resource: { buffer: this.lightUniformBuffer! } }
       ],
     });
 
@@ -538,7 +570,8 @@ export class Renderer {
       textureView,
       world,
       targetWidth: width,
-      targetHeight: height
+      targetHeight: height,
+      environmentBindGroup: this.environmentBindGroup
     };
   }
 
@@ -801,7 +834,11 @@ export class Renderer {
     ]);
 
     pass.setPipeline(this.trianglePipeline);
-    pass.setBindGroup(0, bindGroup); pass.setBindGroup(1, this.sceneBindGroup);
+    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(1, this.sceneBindGroup);
+    if (this.environmentBindGroup) {
+      pass.setBindGroup(2, this.environmentBindGroup);
+    }
     pass.setVertexBuffer(0, component.vertexBuffer!);
     if (component.indexBuffer) {
       pass.setIndexBuffer(component.indexBuffer, 'uint32');

@@ -4,7 +4,7 @@ import { AActor } from '../Framework/AActor';
 import { UMeshComponent } from '../Components/UMeshComponent';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
-import { USkyLightComponent } from '../Components/USkyLightComponent';
+import { ESkyLightSourceType, USkyLightComponent } from '../Components/USkyLightComponent';
 import { UMaterial } from './UMaterial';
 import { Renderer } from './Renderer';
 import { vec3, quat } from 'gl-matrix';
@@ -113,10 +113,10 @@ export class MaterialPreviewer {
    * Carga un HDRI específico para el previewer.
    */
   public async loadEnvironment(path: string = '/environments/pretoria_gardens_1k.hdr') {
-    const device = this.renderer.getDevice();
-    if (device) {
-      await this.skyComponent.loadHDR(path, device);
-    }
+    // Phase 63.3: Environment loading will be handled by the UAssetManager/RGBELoader later.
+    // For now, we update the component state.
+    this.skyComponent.sourceType = ESkyLightSourceType.SpecifiedCubemap;
+    this.skyComponent.cubemapAssetId = path;
   }
 
   /**
@@ -148,3 +148,4 @@ export class MaterialPreviewer {
     console.log("[MaterialPreviewer] Visor de material destruido.");
   }
 }
+

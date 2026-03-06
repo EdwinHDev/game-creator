@@ -1,58 +1,49 @@
 # 💡 Game Creator - Arquitectura de Iluminación y Ecosistema Visual
 
 ## 1. Filosofía Base (El Modelo Unreal Engine)
-En Game Creator, la iluminación no es un cálculo rígido dentro de un shader, sino un **Ecosistema Dinámico**. 
-- **Mundos Estériles:** Por defecto, un `World` no tiene luz. Si el usuario no añade un componente de iluminación, el mundo se renderiza en total oscuridad (negro). No existen "luces globales hardcodeadas" en el código del renderizador.
-- **Separación de Responsabilidades:** La emisión de luz (Física), la recolección de luz (Motor) y la interpretación visual (Lente de Cámara / Post-Proceso) son sistemas independientes.
+La iluminación en Game Creator se basa en el **Physically Based Rendering (PBR)** y la **Iluminación Basada en Imágenes (IBL)**. El objetivo es que ningún objeto tenga sombras negras puras (irrealistas), sino que "respire" el color del cielo y el entorno.
 
-## 2. Los Componentes de Luz (Actores)
-El motor provee componentes específicos que el desarrollador instancia en su escena. Cada uno tiene un propósito físico claro:
+- **Mundos Estériles:** Por defecto, un `World` no tiene luz. Si el usuario no añade componentes de iluminación, el mundo se renderiza en total oscuridad.
+- **Interconectividad:** Los sistemas de atmósfera, sol y luz ambiental trabajan en conjunto para generar un resultado visual coherente.
 
-### A. UDirectionalLightComponent (El Sol)
-- **Propósito:** Luz principal para exteriores. Emite rayos paralelos desde el infinito.
-- **Impacto PBR:** Afecta el Diffuse (Color) y genera el Specular Highlight (Brillo focal) directo.
-- **Sombras:** Proyecta sombras direccionales (Cascaded Shadow Maps en el futuro).
+## 2. Los 3 Pilares Atmosféricos
 
-### B. USkyLightComponent (El Entorno / HDRI)
-- **Propósito:** Captura el entorno (cielo procedural o archivo `.hdr` de usuario) para simular la luz ambiental y los reflejos (Image-Based Lighting - IBL).
-- **Regla de Uso:** Si se usa un HDRI fotorrealista, este componente es el único responsable de pintar los reflejos en los metales y suavizar las sombras.
+### A. Sky Atmosphere (El Motor Físico)
+En lugar de una textura fija, el cielo es un shader procedimental que simula la interacción de la luz con la atmósfera.
+- **Rayleigh Scattering:** Crea el degradado azul característico del cielo durante el día.
+- **Mie Scattering:** Crea el brillo blanquecino (glare) alrededor del sol.
+- **Dinamsmo:** El color del cielo se recalcula en tiempo real basado en el vector de dirección del sol.
 
-### C. Luces Locales (UPointLight, USpotLight, URectLight)
-- *Para implementación futura.* Luces posicionales con radio de decaimiento (Attenuation) para interiores, antorchas, linternas o luces de estudio.
+### B. Directional Light (El Sol)
+Actúa como la fuente de luz primaria y el controlador del ciclo día/noche.
+- **Propiedad Clave:** `bUsedAsAtmosphereSunLight`. Al rotar este actor, se actualiza el vector `SunDirection` en el shader de atmósfera.
+- **Horizonte:** Si el sol baja del horizonte, el cielo entra en modo noche automáticamente, cambiando la dispersión de luz.
 
-## 3. El Pipeline de Datos (Del Game Thread a la GPU)
-Para que el motor sea escalable y soporte múltiples luces sin reescribir shaders, usamos un modelo orientado a datos:
+### C. Sky Light (Iluminación Ambiental)
+Este componente es el que "baña" los objetos con la luz del entorno para que las sombras tengan color y detalle.
+- **SourceType - Captured Scene:** El motor toma el render del Sky Atmosphere y genera un mapa de irradiación en tiempo real.
+- **SourceType - Specified Cubemap (HDRI):** El usuario carga un archivo `.hdr` para definir la iluminación ambiental y los reflejos.
+- **Salida Técnica:** Genera un **Irradiance Map** (para el color de las sombras) y un **Prefiltered Env Map** (para los reflejos metálicos).
 
-1. **Recolección:** En cada frame, el `Renderer` solicita al `World` activo todas las entidades que hereden de `ULightComponent`.
-2. **Estructuración:** El Renderer empaqueta la información (Color, Intensidad, Posición, Tipo de Luz) en un arreglo contiguo de memoria (`LightUniformBuffer` o un SSBO).
-3. **Inyección:** Este buffer masivo se envía a la GPU de una sola vez.
-4. **Cálculo (WGSL):** El shader `Standard.wgsl` contiene un bucle `for` que itera sobre todas las luces del buffer, sumando la contribución PBR de cada una al píxel final.
+## 3. Pipeline de Renderizado (PBR Workflow)
+Para evitar una iluminación plana, el shader `Standard.wgsl` sigue esta ecuación de energía:
+`Color Final = (Luz Directa * Sombras) + (Luz Ambiental * Oclusión Ambiental) + Emisivo`
 
-## 4. Post-Proceso (La Lente)
-El tratamiento final del color se separa de la matemática de la luz.
-- **Tone Mapping (ACES):** Mapeo de valores HDR (Alto Rango Dinámico) a LDR (pantallas estándar) para evitar que los brillos extremos "quemen" la imagen con blancos puros sin detalle.
-- **Exposición:** Multiplicador global que permite ajustar la entrada de luz a la cámara (preparando el terreno para Auto-Exposure).
-- **Corrección Gamma:** Conversión estricta de Espacio Lineal a sRGB justo antes de pintar en pantalla.
-
----
-
-## 5. Hoja de Ruta de Implementación (Paso a Paso)
-
-Para migrar nuestro sistema actual a esta arquitectura profesional sin romper el motor, seguiremos este orden estricto:
+## 4. Hoja de Ruta de Implementación
 
 ### Fase 1: Limpieza y Entorno Cero
-- [ ] Eliminar luces hardcodeadas en `Renderer.ts` y `MaterialPreviewer.ts`.
-- [ ] Asegurar que si el mundo no tiene luces, se vea negro.
+- [x] Eliminar luces hardcodeadas en `Renderer.ts`.
+- [x] Asegurar que si el mundo no tiene luces, se vea negro.
 
-### Fase 2: Formalización de Componentes Fundamentales
-- [ ] Estandarizar `UDirectionalLightComponent` asegurando que exporte correctamente su dirección, color e intensidad hacia el buffer.
-- [ ] Crear el `USkyLightComponent` para manejar la carga de HDRIs y texturas ambientales (sacando esta lógica del Renderer).
+### Fase 2: Formalización de Componentes
+- [x] Estandarizar `UDirectionalLightComponent` con soporte para dirección y color.
+- [ ] Implementar el sistema de atmósfera procedimental (Rayleigh/Mie).
+- [ ] Crear el `USkyLightComponent` para el manejo de IBL.
 
 ### Fase 3: El Gestor de Luces (Light Buffer)
 - [ ] Crear el struct de datos de luces en `Renderer.ts` (`LightUniformBuffer`).
-- [ ] Refactorizar `Standard.wgsl` para leer desde este buffer dinámico mediante un bucle, en lugar de recibir una sola `scene.lightColor`.
+- [ ] Refactorizar `Standard.wgsl` para leer desde este buffer dinámico mediante un bucle.
 
-### Fase 4: Integración del Ecosistema en el Editor (Lookdev)
-- [ ] Actualizar el Material Previewer para que instancie su propio `PreviewWorld`.
-- [ ] Añadir a ese `PreviewWorld` un `UDirectionalLightComponent` y un `USkyLightComponent` (con un HDRI de estudio) preconfigurados.
-- [ ] Garantizar aislamiento total: Los ajustes de luz en el visor principal no afectan al visor de materiales y viceversa.
+### Fase 4: Post-Proceso y Lookdev
+- [ ] Tone Mapping (ACES) para el manejo de altos rangos dinámicos.
+- [ ] Exposición automática y corrección Gamma sRGB.

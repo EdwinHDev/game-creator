@@ -22,7 +22,6 @@ struct SceneUniforms {
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
 @group(1) @binding(1) var shadowMap: texture_depth_2d;
 @group(1) @binding(2) var shadowSampler: sampler_comparison;
-@group(1) @binding(3) var envMap: texture_2d<f32>;
 
 struct Light {
     direction: vec4<f32>,
@@ -33,7 +32,11 @@ struct LightData {
     lights: array<Light, 4>,
     lightCount: u32,
 };
-@group(1) @binding(4) var<uniform> lightData: LightData;
+@group(1) @binding(3) var<uniform> lightData: LightData;
+
+// --- GROUP 2: ENVIRONMENT (IBL) ---
+@group(2) @binding(0) var irradianceMap: texture_cube<f32>;
+@group(2) @binding(1) var environmentSampler: sampler;
 
 struct VertexOut {
     @builtin(position) pos: vec4<f32>,
@@ -210,35 +213,23 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let directLighting = totalDirectLighting;
     
     // 2. IBL HDRI INTEGRADO (DIFUSO Y ESPECULAR)
-    let envDims = vec2<f32>(textureDimensions(envMap));
-    let invAtan = vec2<f32>(0.1591, 0.3183);
+    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
 
     // A) Reflejo Especular (Usando vector R)
     let R = reflect(-V, N);
-    var uvEnvSpec = vec2<f32>(atan2(R.z, R.x), asin(R.y));
-    uvEnvSpec = uvEnvSpec * invAtan + 0.5;
-    let texelX_Spec = u32(clamp(uvEnvSpec.x * envDims.x, 0.0, envDims.x - 1.0));
-    let texelY_Spec = u32(clamp((1.0 - uvEnvSpec.y) * envDims.y, 0.0, envDims.y - 1.0));
-    let hdrSpecColor = textureLoad(envMap, vec2<u32>(texelX_Spec, texelY_Spec), 0u).rgb;
-
-    let F_ambient = fresnelSchlick(max(dot(N, V), 0.0), F0);
+    // Para el futuro: textureSampleLevel con mipmaps para roughness en SpecifiedCubemap
+    let hdrSpecColor = textureSample(irradianceMap, environmentSampler, R).rgb;
 
     // Si el material NO es metálico, reducimos el reflejo especular al mínimo (4%) 
-    // y lo atenuamos drásticamente para que no parezca metal.
     let iblFactor = mix(0.04, 1.0, uniforms.metallic); 
-    // let ambientReflection = F_ambient * hdrSpecColor * (1.0 - finalRoughness) * iblFactor;
-    let ambientReflection = vec3<f32>(0.0);
+    let ambientReflection = F_ambient * hdrSpecColor * (1.0 - finalRoughness) * iblFactor;
 
-    // B) Iluminación Difusa Ambiental (Usando vector N en el HDRI)
-    var uvEnvDiff = vec2<f32>(atan2(N.z, N.x), asin(N.y));
-    uvEnvDiff = uvEnvDiff * invAtan + 0.5;
-    let texelX_Diff = u32(clamp(uvEnvDiff.x * envDims.x, 0.0, envDims.x - 1.0));
-    let texelY_Diff = u32(clamp((1.0 - uvEnvDiff.y) * envDims.y, 0.0, envDims.y - 1.0));
-    let hdrDiffColor = textureLoad(envMap, vec2<u32>(texelX_Diff, texelY_Diff), 0u).rgb;
+    // B) Iluminación Difusa Ambiental (Usando vector N)
+    let hdrDiffColor = textureSample(irradianceMap, environmentSampler, N).rgb;
 
     let ambientDiffuse = hdrDiffColor * diffuseColor * (1.0 - uniforms.metallic) * 1.2;
 
-    // Restaurar el flujo PBR estándar pero asegurando que el Albedo sea el protagonista
+    // Restaurar el flujo PBR estándar
     let finalColor = directLighting + ambientDiffuse + ambientReflection;
 
     // Aplica el gamma normal y fuerza la opacidad a 1.0 para depurar solidez

@@ -37,68 +37,51 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOut {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let sunY = scene.lightDirection.y;
-    var topColor: vec3<f32>;
-    var bottomColor: vec3<f32>;
-
-    if (sunY < -0.1) {
-        // Day
-        topColor = vec3<f32>(0.1, 0.3, 0.8);     // Azul oscuro
-        bottomColor = vec3<f32>(0.4, 0.7, 1.0);  // Azul claro
-    } else if (sunY < 0.3) {
-        // Sunset / Sunrise (interpolating from -0.1 to 0.3)
-        let t = (sunY + 0.1) / 0.4;
-        
-        let dayTop = vec3<f32>(0.1, 0.3, 0.8);
-        let dayBot = vec3<f32>(0.4, 0.7, 1.0);
-        
-        let duskTop = vec3<f32>(0.4, 0.1, 0.5); // Púrpura
-        let duskBot = vec3<f32>(1.0, 0.4, 0.1); // Naranja
-        
-        topColor = mix(dayTop, duskTop, t);
-        bottomColor = mix(dayBot, duskBot, t);
-    } else if (sunY < 0.6) {
-        // Dusk into Night
-        let t = (sunY - 0.3) / 0.3;
-        
-        let duskTop = vec3<f32>(0.4, 0.1, 0.5);
-        let duskBot = vec3<f32>(1.0, 0.4, 0.1);
-        
-        let nightTop = vec3<f32>(0.0, 0.0, 0.05); // Negro / Azul marino
-        let nightBot = vec3<f32>(0.0, 0.0, 0.2);
-        
-        topColor = mix(duskTop, nightTop, t);
-        bottomColor = mix(duskBot, nightBot, t);
-    } else {
-        // Night
-        topColor = vec3<f32>(0.0, 0.0, 0.05);
-        bottomColor = vec3<f32>(0.0, 0.0, 0.2);
-    }
-
-    var finalColor = mix(topColor, bottomColor, in.uv.y);
-    
-    // Phase 28: Fake Sun Bloom (Ray Marching Far Plane)
-    // 1. Calculate World Ray
+    // 1. Calculate World Ray (View Direction)
     let ndcX = in.uv.x * 2.0 - 1.0;
-    let ndcY = -(in.uv.y * 2.0 - 1.0); // Flip Y for WebGPU NDC
+    let ndcY = 1.0 - in.uv.y * 2.0; // Standard UV to NDC
     let ndcPos = vec4<f32>(ndcX, ndcY, 1.0, 1.0);
     
     var worldPosHover = scene.invViewProj * ndcPos;
     worldPosHover = worldPosHover / worldPosHover.w;
     
     let V = normalize(worldPosHover.xyz - scene.cameraPosition.xyz);
-    let L = normalize(-scene.lightDirection.xyz);
+    let L = normalize(-scene.lightDirection.xyz); // Direction TO sun
     
-    // 2. Halo logic
+    // 2. Atmospheric Sky Gradient (Unreal Style)
+    let sunY = L.y;
+    let viewY = V.y;
+    
+    // Base Zenith and Horizon colors adjusted by sun height
+    var zenithColor = vec3<f32>(0.05, 0.1, 0.4);
+    var horizonColor = vec3<f32>(0.4, 0.5, 0.7);
+    
+    if (sunY < 0.2) {
+        // Sunset colors
+        let sunsetFactor = clamp((sunY + 0.1) / 0.3, 0.0, 1.0);
+        zenithColor = mix(vec3<f32>(0.05, 0.05, 0.1), zenithColor, sunsetFactor);
+        horizonColor = mix(vec3<f32>(0.8, 0.3, 0.1), horizonColor, sunsetFactor);
+    }
+    
+    // Simple vertical gradient based on V.y (height)
+    let height = clamp(viewY * 1.5, 0.0, 1.0);
+    var skyColor = mix(horizonColor, zenithColor, pow(height, 0.6));
+    
+    // 3. Fake Sun Bloom Integration
     let dotVL = max(dot(V, L), 0.0);
-    let bloomIntensity = pow(dotVL, 400.0) * 2.0; // Soft halo
-    let sunDisk = pow(dotVL, 2000.0) * 10.0;     // Core disk
+    let sunIntensity = scene.lightColor.w;
+    let sunGlow = pow(dotVL, 128.0) * horizonColor * sunIntensity; // Soft atmosphere glow
+    let sunDisk = pow(dotVL, 2048.0) * scene.lightColor.rgb * 5.0 * sunIntensity; // Brighter disk
     
-    let sunColor = vec3<f32>(1.0, 0.95, 0.8) * scene.lightColor.rgb;
-    finalColor = finalColor + (bloomIntensity + sunDisk) * sunColor;
+    skyColor += sunGlow + sunDisk;
+    
+    // Ground placeholder (to avoid seeing weird artifacts below horizon)
+    if (viewY < 0.0) {
+        skyColor = vec3<f32>(0.02, 0.02, 0.02);
+    }
 
     // HDR Tonemapping for sky
-    finalColor = finalColor / (finalColor + vec3<f32>(1.0));
+    skyColor = skyColor / (skyColor + vec3<f32>(1.0));
 
-    return vec4<f32>(finalColor, 1.0);
+    return vec4<f32>(skyColor, 1.0);
 }
