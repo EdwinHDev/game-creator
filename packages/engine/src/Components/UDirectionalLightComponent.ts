@@ -1,4 +1,4 @@
-import { quat, vec3 } from 'gl-matrix';
+import { vec3, quat } from 'gl-matrix';
 import { AActor } from '../Framework/AActor';
 import { USceneComponent } from '../Framework/USceneComponent';
 
@@ -11,16 +11,19 @@ export class UDirectionalLightComponent extends USceneComponent {
   public intensity: number = 10.0;
   public bUsedAsAtmosphereSunLight: boolean = true;
   public castShadows: boolean = true;
+  public shadowDistance: number = 10000.0; // 100 metros en UU
+  public shadowBias: number = 0.002;
 
   constructor(owner: AActor, name: string = 'DirectionalLight') {
     super(owner, name);
-    // Inicialización explícita para evitar NaNs
+    // Inicialización robusta para evitar NaNs
     this.relativeLocation = vec3.create();
-    this.relativeRotation = quat.create();
-    this.relativeScale = vec3.fromValues(1.0, 1.0, 1.0);
+    this.relativeRotation = quat.create(); // Ensure relativeRotation is initialized as a quat
+    this.relativeScale = vec3.fromValues(1, 1, 1);
 
-    // Inclinación inicial para el sol (e.g. -45 grados)
-    quat.fromEuler(this.relativeRotation, -45, 0, 0);
+    // Restaurar rotación inicial a -45 grados Euler en X
+    const eulerRotation = vec3.fromValues(-45, 0, 0);
+    quat.fromEuler(this.relativeRotation, eulerRotation[0], eulerRotation[1], eulerRotation[2]);
   }
 
   // La dirección se extrae del WorldMatrix del componente en el Renderer

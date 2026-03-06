@@ -4,6 +4,7 @@ struct Uniforms {
     baseColor: vec4<f32>,
     roughness: f32,
     metallic: f32,
+    shadowBias: f32,
 }
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var baseColorSampler: sampler;
@@ -15,8 +16,8 @@ struct SceneUniforms {
     viewProj: mat4x4<f32>,
     invViewProj: mat4x4<f32>,
     cameraPosition: vec4<f32>,
-    lightDirection: vec4<f32>,
-    lightColor: vec4<f32>,
+    sunDirection: vec4<f32>,
+    sunColor: vec4<f32>,
     lightViewProj: mat4x4<f32>,
 }
 @group(1) @binding(0) var<uniform> scene: SceneUniforms;
@@ -138,6 +139,11 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+fn fetch_shadow(posUV: vec2<f32>, depth: f32, offset: vec2<f32>) -> f32 {
+    let size = 1.0 / 2048.0; // Tamaño del texel (Shadow map es 2048x2048)
+    return textureSampleCompare(shadowMap, shadowSampler, posUV + offset * size, depth);
+}
+
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // 1. LECTURA DE TEXTURAS Y DECODIFICACIÓN sRGB -> LINEAR (CRÍTICO PARA COLOR VIVO)
@@ -170,7 +176,15 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let shadowCoords = in.shadowPos.xyz / in.shadowPos.w;
     let flipCorrect = vec2<f32>(0.5, -0.5);
     let posUV = shadowCoords.xy * flipCorrect + 0.5;
-    let shadowVisibility = textureSampleCompare(shadowMap, shadowSampler, posUV, shadowCoords.z - 0.005);
+    let depth = shadowCoords.z - uniforms.shadowBias;
+    
+    var shadowVisibility = 0.0;
+    for (var y = -1.5; y <= 1.5; y += 1.0) {
+        for (var x = -1.5; x <= 1.5; x += 1.0) {
+            shadowVisibility += fetch_shadow(posUV, depth, vec2<f32>(x, y));
+        }
+    }
+    shadowVisibility /= 16.0;
 
     // Cook-Torrance PBR Base Reflection
     var F0 = vec3<f32>(0.04);
@@ -180,7 +194,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     var totalDirectLighting = vec3<f32>(0.0);
     for (var i = 0u; i < lightData.lightCount; i++) {
         let light = lightData.lights[i];
-        let L = normalize(-light.direction.xyz);
+        let L = normalize(light.direction.xyz); // Direction TOWARDS the light source
         let H = normalize(V + L);
         let lightColorArr = light.color.rgb;
         let lightIntensityVal = light.color.w;

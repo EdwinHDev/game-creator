@@ -83,10 +83,6 @@ export class DetailsPanel extends HTMLElement {
     this.updateInputValues();
   };
 
-  private sanitize(val: any): number {
-    return (isNaN(val) || val === undefined || val === null) ? 0 : val;
-  }
-
   private updateInputValues() {
     const root = this.currentActor.rootComponent;
 
@@ -94,17 +90,35 @@ export class DetailsPanel extends HTMLElement {
     const pX = this.querySelector('#pos-x') as HTMLInputElement;
     const pY = this.querySelector('#pos-y') as HTMLInputElement;
     const pZ = this.querySelector('#pos-z') as HTMLInputElement;
-    if (pX && document.activeElement !== pX) pX.value = (this.sanitize(root.relativeLocation[0]) || 0).toFixed(2);
-    if (pY && document.activeElement !== pY) pY.value = (this.sanitize(root.relativeLocation[1]) || 0).toFixed(2);
-    if (pZ && document.activeElement !== pZ) pZ.value = (this.sanitize(root.relativeLocation[2]) || 0).toFixed(2);
+    if (pX && document.activeElement !== pX) {
+      const val = root.relativeLocation[0] ?? 0;
+      pX.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
+    if (pY && document.activeElement !== pY) {
+      const val = root.relativeLocation[1] ?? 0;
+      pY.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
+    if (pZ && document.activeElement !== pZ) {
+      const val = root.relativeLocation[2] ?? 0;
+      pZ.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
 
     // Scale
     const sX = this.querySelector('#sca-x') as HTMLInputElement;
     const sY = this.querySelector('#sca-y') as HTMLInputElement;
     const sZ = this.querySelector('#sca-z') as HTMLInputElement;
-    if (sX && document.activeElement !== sX) sX.value = (this.sanitize(root.relativeScale[0]) || 0).toFixed(2);
-    if (sY && document.activeElement !== sY) sY.value = (this.sanitize(root.relativeScale[1]) || 0).toFixed(2);
-    if (sZ && document.activeElement !== sZ) sZ.value = (this.sanitize(root.relativeScale[2]) || 0).toFixed(2);
+    if (sX && document.activeElement !== sX) {
+      const val = root.relativeScale[0] ?? 0;
+      sX.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
+    if (sY && document.activeElement !== sY) {
+      const val = root.relativeScale[1] ?? 0;
+      sY.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
+    if (sZ && document.activeElement !== sZ) {
+      const val = root.relativeScale[2] ?? 0;
+      sZ.value = (isNaN(val) ? 0 : val).toFixed(2);
+    }
 
     // Rotation (Euler)
     const rotX = this.querySelector('#rot-x') as HTMLInputElement;
@@ -112,9 +126,18 @@ export class DetailsPanel extends HTMLElement {
     const rotZ = this.querySelector('#rot-z') as HTMLInputElement;
     if (rotX && rotY && rotZ) {
       const euler = this.quatToEuler(root.relativeRotation);
-      if (document.activeElement !== rotX) rotX.value = (this.sanitize(euler[0]) || 0).toFixed(0);
-      if (document.activeElement !== rotY) rotY.value = (this.sanitize(euler[1]) || 0).toFixed(0);
-      if (document.activeElement !== rotZ) rotZ.value = (this.sanitize(euler[2]) || 0).toFixed(0);
+      if (document.activeElement !== rotX) {
+        const val = euler[0] ?? 0;
+        rotX.value = (isNaN(val) ? 0 : val).toFixed(2);
+      }
+      if (document.activeElement !== rotY) {
+        const val = euler[1] ?? 0;
+        rotY.value = (isNaN(val) ? 0 : val).toFixed(2);
+      }
+      if (document.activeElement !== rotZ) {
+        const val = euler[2] ?? 0;
+        rotZ.value = (isNaN(val) ? 0 : val).toFixed(2);
+      }
     }
   }
 

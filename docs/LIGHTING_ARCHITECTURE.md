@@ -47,3 +47,17 @@ Para evitar una iluminación plana, el shader `Standard.wgsl` sigue esta ecuaci�
 ### Fase 4: Post-Proceso y Lookdev
 - [ ] Tone Mapping (ACES) para el manejo de altos rangos dinámicos.
 - [ ] Exposición automática y corrección Gamma sRGB.
+
+## 6. Sistema de Oclusión (Sombras)
+
+Para mantener la coherencia con la escala 100UU, el motor implementa un sistema de sombras basado en el estándar de Unreal:
+
+### A. Proyección Ortográfica Escalada
+- La cámara de sombras debe centrarse en la posición del espectador pero alinearse con la dirección del sol.
+- El frustum de sombra debe cubrir un radio de 50m (5000 UU) para asegurar que el entorno inmediato esté siempre ocluido.
+
+### B. Suavizado (PCF - Percentage Closer Filtering)
+- No permitiremos bordes de sombra "serruchados". El shader `Standard.wgsl` debe realizar un muestreo de 3x3 o 5x5 sobre la `shadowTexture` para promediar los bordes.
+
+### C. Manejo de Bias Físico
+- Para evitar el "Shadow Acne" en superficies grandes, implementaremos un Bias basado en la pendiente (Slope-scaled Bias). Cuanto más plana sea la superficie respecto a la luz, mayor será el bias para evitar artefactos.

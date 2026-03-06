@@ -10,93 +10,68 @@ struct SceneUniforms {
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 
 struct VertexOutput {
-    @builtin(position) position: vec4<f32>,
-    @location(0) nearPoint: vec3<f32>,
-    @location(1) farPoint: vec3<f32>,
+    @builtin(position) pos: vec4<f32>,
+    @location(0) uv: vec2<f32> // Screen coordinates [-1, 1]
 };
 
 @vertex
-fn vs_main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
-    var pos = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(-1.0, 1.0),
-        vec2<f32>(-1.0, 1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0)
-    );
-    let p = pos[VertexIndex];
+fn vs_main(@builtin(vertex_index) idx: u32) -> VertexOutput {
+    var p = vec2<f32>(0.0);
+    if(idx == 0u) { p = vec2(-1.0, -1.0); }
+    else if(idx == 1u) { p = vec2( 1.0, -1.0); }
+    else if(idx == 2u) { p = vec2(-1.0,  1.0); }
+    else if(idx == 3u) { p = vec2(-1.0,  1.0); }
+    else if(idx == 4u) { p = vec2( 1.0, -1.0); }
+    else if(idx == 5u) { p = vec2( 1.0,  1.0); }
     
-    var output: VertexOutput;
-    output.position = vec4<f32>(p, 0.0, 1.0);
-    output.nearPoint = unprojectPoint(p.x, p.y, 0.0, scene.invViewProj);
-    output.farPoint = unprojectPoint(p.x, p.y, 1.0, scene.invViewProj);
-    return output;
+    var out: VertexOutput;
+    // We render at the far plane (z=1.0 in NDC)
+    out.pos = vec4<f32>(p, 1.0, 1.0);
+    out.uv = p;
+    return out;
 }
-
-fn unprojectPoint(x: f32, y: f32, z: f32, invVP: mat4x4<f32>) -> vec3<f32> {
-    let unprojected = invVP * vec4<f32>(x, y, z, 1.0);
-    return unprojected.xyz / unprojected.w;
-}
-
-struct FragmentOutput {
-    @location(0) color: vec4<f32>,
-    @builtin(frag_depth) depth: f32,
-};
 
 @fragment
-fn fs_main(input: VertexOutput) -> FragmentOutput {
-    let rayDir = input.farPoint - input.nearPoint;
-    let t = -input.nearPoint.y / rayDir.y;
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Unproject each screen pixel to the world far plane
+    let p_ndc = vec4<f32>(in.uv, 1.0, 1.0);
+    let p_world_h = scene.invViewProj * p_ndc;
+    let p_world = p_world_h.xyz / p_world_h.w;
     
-    // Si el rayo no intersecta el plano Y=0 o está detrás de la cámara:
-    if (t <= 0.0 || isnan(t)) { discard; }
+    let ray_origin = scene.cameraPosition.xyz;
+    let ray_dir = normalize(p_world - ray_origin);
     
-    let worldPos = input.nearPoint + t * rayDir;
+    // Intersect ray with ground plane (Y = 0)
+    // Ray Equation: P = O + t*D
+    // Plane Equation: P.y = 0  => O.y + t*D.y = 0  => t = -O.y / D.y
+    let t = -ray_origin.y / ray_dir.y;
     
-    // Generar la grilla normal
-    let grid = max(makeGrid(worldPos, 0.1), makeGrid(worldPos, 0.01));
+    // Discard if we are looking above the horizon or the hit is behind us
+    if (t <= 0.0) { discard; }
     
-    // Desvanecimiento radial suave desde la posicion de la cámara
-    let d = distance(scene.cameraPosition.xz, worldPos.xz);
-    let horizonDistance = 100.0; // Distancia donde la grid desaparece suavemente
-    let smoothFade = smoothstep(horizonDistance, horizonDistance * 0.5, d);
+    let world_hit = ray_origin + t * ray_dir;
     
-    let alpha = grid * smoothFade * 0.5;
-    
-    // Área invisible si no hay grid o estamos muy lejos
-    if (alpha <= 0.0) { discard; }
-    
-    // Colores base de los ejes
-    let colorX = vec3<f32>(0.9, 0.1, 0.1); // Red (X Axis)
-    let colorZ = vec3<f32>(0.1, 0.1, 0.9); // Blue (Z Axis)
-    let gridColorBase = vec3<f32>(0.3, 0.3, 0.3);
-    
-    // Resaltar ejes centrales (X=0 y Z=0)
-    let fwidthX = fwidth(worldPos.x);
-    let fwidthZ = fwidth(worldPos.z);
-    let isZAxis = 1.0 - min(abs(worldPos.x) / fwidthX, 1.0);
-    let isXAxis = 1.0 - min(abs(worldPos.z) / fwidthZ, 1.0);
-    
-    var finalColor = gridColorBase;
-    if (isXAxis > 0.0) { finalColor = mix(finalColor, colorX, isXAxis); }
-    if (isZAxis > 0.0) { finalColor = mix(finalColor, colorZ, isZAxis); }
-    
-    let clipPos = scene.viewProj * vec4<f32>(worldPos, 1.0);
-    let depth = clipPos.z / clipPos.w;
-    
-    var output: FragmentOutput;
-    if (alpha <= 0.0) {
-        output.color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-        output.depth = 1.0;
-        discard;
-    } else {
-        output.color = vec4<f32>(finalColor, alpha);
-        output.depth = depth;
-    }
-    return output;
-}
-
-fn makeGrid(pos: vec3<f32>, scale: f32) -> f32 {
-    let coord = pos.xz * scale;
+    // Procedural grid lines
+    let coord = world_hit.xz / 100.0; // 100 units = 1 grid cell
     let derivative = fwidth(coord);
     let grid = abs(fract(coord - 0.5) - 0.5) / derivative;
     let line = min(grid.x, grid.y);
-    return 1.0 - min(line, 1.0);
+    let color_val = 1.0 - min(line, 1.0);
+    
+    // Fade based on distance to prevent aliasing at horizon
+    let dist = length(world_hit - ray_origin);
+    let fade = exp(-dist * 0.0005);
+    
+    // Axis coloring (X=Red, Z=Blue) to match gizmos
+    let isX = 1.0 - saturate(abs(world_hit.z) / fwidth(world_hit.z));
+    let isZ = 1.0 - saturate(abs(world_hit.x) / fwidth(world_hit.x));
+    
+    var finalColor = vec3<f32>(0.15); // Base dark gray grid
+    finalColor = mix(finalColor, vec3<f32>(1.0, 0.2, 0.2), isX);
+    finalColor = mix(finalColor, vec3<f32>(0.2, 0.2, 1.0), isZ);
+    
+    let alpha = color_val * fade;
+    if (alpha <= 0.01) { discard; }
+    
+    return vec4<f32>(finalColor, alpha);
 }

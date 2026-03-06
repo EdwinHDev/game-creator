@@ -3,6 +3,8 @@ import { AActor } from './AActor';
 import { EventBus } from '../Core/EventBus';
 import { UObject } from '../Core/UObject';
 
+import { UGridComponent } from '../Components/UGridComponent';
+
 /**
  * Manages the collection of actors and the game state.
  */
@@ -18,16 +20,20 @@ export class World extends UObject {
   public selectedActorId: string | null = null;
 
   public bShowGrid: boolean = true;
-  public gridConfig = {
-    size: 1.0,
-    color: [0.5, 0.5, 0.5, 1.0],
-    opacity: 0.8
-  };
+
+  /**
+   * Main grid management component.
+   * Although it belongs to an 'EditorActor' in a real project,
+   * here it manages global world grid parameters.
+   */
+  public gridComponent: UGridComponent;
 
   private isBegunPlay: boolean = false;
 
   constructor(name: string = 'World') {
     super(name);
+    // Create a dummy grid component (owner is null for now as it's world-level)
+    this.gridComponent = new UGridComponent(null as any, 'GridComponent');
   }
 
   /**
@@ -105,6 +111,8 @@ export class World extends UObject {
   public serialize(): any {
     return {
       projectName: this.name,
+      bShowGrid: this.bShowGrid,
+      gridSettings: this.gridComponent.serialize(),
       actors: this.actors.filter(a => !a.isEditorOnly).map(a => a.serialize())
     };
   }
@@ -120,6 +128,9 @@ export class World extends UObject {
     for (const actor of actorsToDestroy) {
       this.destroyActor(actor);
     }
+
+    if (jsonData.bShowGrid !== undefined) this.bShowGrid = jsonData.bShowGrid;
+    if (jsonData.gridSettings) this.gridComponent.deserialize(jsonData.gridSettings);
 
     if (!jsonData.actors) return;
 

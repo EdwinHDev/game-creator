@@ -2,8 +2,9 @@ struct SceneUniforms {
     viewProj: mat4x4<f32>,
     invViewProj: mat4x4<f32>,
     cameraPosition: vec4<f32>,
-    sunDirection: vec3<f32>,
-    sunColor: vec3<f32>,
+    sunDirection: vec4<f32>,
+    sunColor: vec4<f32>,
+    lightViewProj: mat4x4<f32>,
 }
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 
@@ -43,7 +44,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let viewDir = normalize(input.worldPos);
-    let sunDir = normalize(scene.sunDirection);
+    let sunDir = normalize(scene.sunDirection.xyz);
     
     // Gradiente de cielo (Rayleigh simplificado)
     let zenithColor = vec3<f32>(0.05, 0.15, 0.4);
@@ -53,18 +54,18 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // Disco solar (Mie simplificado)
     let sunInfluence = max(0.0, dot(viewDir, sunDir));
-    let sunSize = pow(sunInfluence, 500.0); // Tamaño del sol
+    let sunSize = pow(sunInfluence, 1000.0); // Disco nítido solicitado
     let sunGlow = pow(sunInfluence, 20.0) * 0.5; // Halo
     
-    finalColor += (scene.sunColor * sunSize) + (scene.sunColor * sunGlow);
+    finalColor += (scene.sunColor.rgb * sunSize) + (scene.sunColor.rgb * sunGlow);
 
-    // Ground fallback
-    if (viewDir.y < -0.01) {
-        finalColor = vec3<f32>(0.01);
-    }
+    // Atmospheric Fog/Haze (Nadir softening)
+    let nadirT = saturate(-viewDir.y * 5.0);
+    let nadirColor = vec3<f32>(0.02, 0.03, 0.05);
+    finalColor = mix(finalColor, nadirColor, nadirT * 0.8);
 
     // HDR Tonemapping básico
-    finalColor = 1.0 - exp(-finalColor * 1.0);
+    finalColor = 1.0 - exp(-finalColor * 1.5);
     
     return vec4<f32>(finalColor, 1.0);
 }

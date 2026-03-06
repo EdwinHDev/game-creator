@@ -287,7 +287,7 @@ export class Renderer {
           }
         }]
       },
-      depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less-equal', format: 'depth24plus' },
     });
 
     this.outlinePipeline = this.device.createRenderPipeline({
@@ -489,11 +489,13 @@ export class Renderer {
     for (let i = 0; i < directionalLights.length; i++) {
       const light = directionalLights[i];
       const worldMat = light.owner.rootComponent?.getWorldMatrix() || mat4.create();
-      const lightForward = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
-      vec3.normalize(lightForward, lightForward);
+      // Extraction of the Vector pointed TOWARDS the light source (Backward)
+      // gl-matrix: column 2 (index 8,9,10) is the Z axis.
+      const towardsLight = vec3.fromValues(worldMat[8], worldMat[9], worldMat[10]);
+      vec3.normalize(towardsLight, towardsLight);
 
       const offset = i * 8;
-      lightBufferData.set(lightForward, offset);
+      lightBufferData.set(towardsLight, offset);
       lightBufferData.set([0], offset + 3); // padding
       lightBufferData.set(light.lightColor, offset + 4);
       lightBufferData.set([light.intensity], offset + 7); // intensity in w
@@ -504,17 +506,17 @@ export class Renderer {
     this.device.queue.writeBuffer(this.lightUniformBuffer!, 128, countBuffer);
 
     // Global Sun Direction/Color for Atmosphere/Sky (Group 1, Binding 0)
-    let sunForward = vec3.fromValues(0, -1, 0);
+    let towardsSun = vec3.fromValues(0, 1, 0); // Default up
     if (mainSun && mainSun.owner.rootComponent) {
       const worldMat = mainSun.owner.rootComponent.getWorldMatrix();
-      // Forward is -Z (columns are [0-3]=X, [4-7]=Y, [8-11]=Z)
-      sunForward = vec3.fromValues(-worldMat[8], -worldMat[9], -worldMat[10]);
-      vec3.normalize(sunForward, sunForward);
+      // Z-axis (columns 8,9,10) points towards the light source in our convention
+      towardsSun = vec3.fromValues(worldMat[8], worldMat[9], worldMat[10]);
+      vec3.normalize(towardsSun, towardsSun);
     }
 
     // Zero Protection: Ensure no components are exactly zero to avoid NaNs in shaders
     const protect = (v: number) => Math.abs(v) < 0.001 ? 0.001 * Math.sign(v || 1) : v;
-    const safeSunDir = [protect(sunForward[0]), protect(sunForward[1]), protect(sunForward[2])];
+    const safeSunDir = [protect(towardsSun[0]), protect(towardsSun[1]), protect(towardsSun[2])];
 
     const sunColor = mainSun ? mainSun.lightColor : vec3.fromValues(1, 1, 1);
     const sunIntensity = mainSun ? Math.max(0.001, mainSun.intensity) : 1.0;
@@ -523,14 +525,16 @@ export class Renderer {
     // Shadow calculation remains relevant
     const lightViewProj = mat4.create();
     const lightProj = mat4.create();
-    mat4.ortho(lightProj, -20, 20, -20, 20, 0.1, 150);
+    mat4.ortho(lightProj, -5000, 5000, -5000, 5000, 1.0, 20000);
     const fixMatrix = mat4.fromValues(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 1);
     mat4.multiply(lightProj, fixMatrix, lightProj);
 
     const lightEye = mainSun ? mainSun.owner.rootComponent!.relativeLocation : vec3.fromValues(0, 50, 0);
-    const lightTarget = vec3.add(vec3.create(), lightEye, sunForward);
+    // Shadow target remains along the -TowardsSun vector (the Forward vector)
+    const sunForwardDir = vec3.scale(vec3.create(), towardsSun, -1);
+    const lightTarget = vec3.add(vec3.create(), lightEye, sunForwardDir);
     let up = vec3.fromValues(0, 1, 0);
-    if (Math.abs(vec3.dot(sunForward, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
+    if (Math.abs(vec3.dot(sunForwardDir, up)) > 0.99) up = vec3.fromValues(1, 0, 0);
     const lightView = mat4.lookAt(mat4.create(), lightEye, lightTarget, up);
     mat4.multiply(lightViewProj, lightProj, lightView);
 
@@ -662,7 +666,7 @@ export class Renderer {
         if (component instanceof USceneComponent && component.bIsHidden) continue;
         if (component instanceof UMeshComponent && component.vertexBuffer) {
           if (component.topology === 'triangle-list' && !component.isGizmo) {
-            this.renderMesh(pass, component, viewProjMatrix, isSelected);
+            this.renderMesh(pass, component, viewProjMatrix, isSelected, frameData.directionalLight);
           }
         }
       }
@@ -671,7 +675,7 @@ export class Renderer {
   }
 
   private executeGizmoPass(frameData: FrameData): void {
-    const { commandEncoder, textureView, world, viewProjMatrix, mainCamera, aspectRatio } = frameData;
+    const { commandEncoder, textureView, world, viewProjMatrix } = frameData;
 
     // Overlay Render Pass: We want the gizmo to draw on top of everything.
     // Standard approach: Clear the depth buffer before drawing the gizmos.
@@ -762,14 +766,7 @@ export class Renderer {
     if (this.billboardPipeline && this.billboardQuadBuffer) {
       pass.setPipeline(this.billboardPipeline);
       pass.setVertexBuffer(0, this.billboardQuadBuffer);
-      for (const actor of world.actors) {
-        if (actor.bIsHidden) continue; // Hide icons too
-        for (const component of actor.components) {
-          if (component instanceof UDirectionalLightComponent) {
-            this.renderBillboard(pass, component, mainCamera, aspectRatio);
-          }
-        }
-      }
+      // Billboard rendering of light icons and other editor visuals is currently disabled
     }
     pass.end();
   }
@@ -794,7 +791,7 @@ export class Renderer {
     pass.setPipeline(this.gridPipeline);
     // Group 0: Camera and Global Data (Same as main pass but at index 0 for this pipeline)
     pass.setBindGroup(0, this.sceneBindGroup!);
-    pass.draw(6); // Full-screen quad (triangle list)
+    pass.draw(6); // Full-screen quad (6 vertices for 2 triangles)
     pass.end();
   }
 
@@ -802,7 +799,7 @@ export class Renderer {
     this.device!.queue.submit([encoder.finish()]);
   }
 
-  private renderMesh(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, isSelected: boolean) {
+  private renderMesh(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, isSelected: boolean, directionalLight: UDirectionalLightComponent | null = null) {
     if (!this.trianglePipeline || !this.sceneBindGroup) return;
     const mvp = mat4.create();
     const model = component.getWorldMatrix();
@@ -815,7 +812,8 @@ export class Renderer {
     // Phase 27: Roughness floor to prevent division-by-zero in Cook-Torrance denominator
     data[36] = Math.max(component.material?.roughness ?? 0.5, 0.002);
     data[37] = component.material?.metallic ?? 0.0;
-    // data[38], data[39] are padding
+    data[38] = directionalLight ? directionalLight.shadowBias : 0.002; // dynamic shadowBias
+    // data[39] are padding
     this.device!.queue.writeBuffer(buffer, 0, data);
 
     // Material Architecture Fase 1: Correct texture fallback selection
@@ -901,19 +899,6 @@ export class Renderer {
     }
   }
 
-  private renderBillboard(pass: GPURenderPassEncoder, light: UDirectionalLightComponent, camera: UCameraComponent, aspect: number) {
-    if (!this.billboardPipeline) return;
-    const buffer = this.getOrCreateUniformBuffer(light.id + "_billboard", 160);
-    const data = new Float32Array(40);
-    data.set(camera.getViewMatrix() as any, 0);
-    data.set(camera.getProjectionMatrix(aspect) as any, 16);
-    data.set(light.owner.rootComponent!.relativeLocation as any, 32);
-    data[35] = 0.25; // Size
-    data.set(light.isSelected ? [1, 0.6, 0, 1] : [1, 1, 0, 0.8], 36); // Color
-    this.device!.queue.writeBuffer(buffer, 0, data);
-    const bindGroup = this.getOrCreateBindGroup(light.id + "_billboard", this.billboardPipeline.getBindGroupLayout(0), [{ binding: 0, resource: { buffer } }]);
-    pass.setBindGroup(0, bindGroup); pass.draw(4);
-  }
 
   private getOrCreateUniformBuffer(key: string, size: number): GPUBuffer {
     let buffer = this.uniformBuffers.get(key);

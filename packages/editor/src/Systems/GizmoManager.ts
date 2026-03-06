@@ -1,6 +1,6 @@
 import {
-  EventBus, AActor, quat, vec3, mat4, Engine,
-  getRayFromCamera, intersectRayPlane, projectToScreen, UMeshComponent, UDirectionalLightComponent,
+  EventBus, AActor, quat, vec3, Engine,
+  getRayFromCamera, intersectRayPlane, projectToScreen,
   UCameraComponent, AGizmoActor
 } from '@game-creator/engine';
 
@@ -13,10 +13,6 @@ export class GizmoManager {
 
   // Transform Gizmo Actor (Centralized)
   private gizmoActor: AGizmoActor | null = null;
-
-  // Dedicated handle for Directional Lights
-  private lightDirectionGizmo: AActor | null = null;
-  private lightDirectionTip: AActor | null = null;
 
   private currentTransformMode: 'translate' | 'rotate' | 'scale' = 'translate';
   private transformSpace: 'global' | 'local' = 'global';
@@ -34,9 +30,6 @@ export class GizmoManager {
   private lastMouseX: number = 0;
   private lastMouseY: number = 0;
   private isCheckingHover: boolean = false;
-
-  // Phase 20.3: Solar Handle
-  private isDraggingSolarHandle: boolean = false;
 
   constructor() {
     // Listen for engine ticks to update gizmo positions/sizes
@@ -314,40 +307,15 @@ export class GizmoManager {
               }
             }
           }
+          EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
+          this.update();
         }
       }
-      EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
-      this.update();
-    } else if (this.isDraggingSolarHandle && this._selectedActor?.rootComponent) {
-      // Phase 20.4/26.2: Drag Solar Handle Logic
-      const pos = this._selectedActor.rootComponent.relativeLocation;
-      const distance = 3.0; // Standardized handle distance
-      const targetPoint = vec3.create();
-      vec3.scaleAndAdd(targetPoint, ray.origin, ray.direction, distance);
-
-      // We want the light's Local -Z (forward) to point AT the target.
-      // mat4.targetTo creates a view matrix where +Z points from Target to Eye.
-      // If we use targetPoint - pos as the target direction, the math natively creates a matrix 
-      // where +Z points backwards (pos - targetPoint), causing -Z to point perfectly at targetPoint!
-      const direction = vec3.create();
-      vec3.subtract(direction, targetPoint, pos);
-      vec3.normalize(direction, direction);
-
-      const up = vec3.fromValues(0, 1, 0);
-      if (Math.abs(vec3.dot(direction, up)) > 0.99) vec3.set(up, 1, 0, 0);
-
-      const m = mat4.create();
-      mat4.targetTo(m, [0, 0, 0], direction, up);
-      mat4.getRotation(this._selectedActor.rootComponent.relativeRotation, m);
-
-      EventBus.emit('OnActorPropertiesChanged', this._selectedActor);
-      this.update();
     }
   }
 
   public onMouseUp(): void {
     this.isDraggingGizmo = false;
-    this.isDraggingSolarHandle = false;
     this.dragAxis = null;
     if (this.gizmoActor) {
       this.gizmoActor.activeAxis = 0;
@@ -384,75 +352,15 @@ export class GizmoManager {
     const rot = root.relativeRotation;
     const camPos = this.getCameraPosition();
     const camRot = this.getCameraRotation();
-    const scaleFactor = this.calculateScaleFactor(pos);
 
-    if (this._selectedActor.getComponent(UDirectionalLightComponent)) {
-      if (this.gizmoActor) this.gizmoActor.bIsHidden = true; // In solar mode, hide standard gizmos
-
-      const syncPart = (actor: AActor | null, localOffset: vec3, localRotEuler?: vec3, scaleMultiplier: number = 1.0, forceLocal: boolean = false) => {
-        if (!actor?.rootComponent) return;
-        vec3.copy(actor.rootComponent.relativeLocation, pos);
-
-        const finalOffset = vec3.create();
-        vec3.set(finalOffset, localOffset[0] * scaleFactor, localOffset[1] * scaleFactor, localOffset[2] * scaleFactor);
-
-        const worldOffset = vec3.create();
-        if (this.transformSpace === 'local' || forceLocal) {
-          vec3.transformQuat(worldOffset, finalOffset, rot);
-        } else {
-          vec3.copy(worldOffset, finalOffset);
-        }
-        vec3.add(actor.rootComponent.relativeLocation, actor.rootComponent.relativeLocation, worldOffset);
-
-        if (localRotEuler) {
-          const localQuat = quat.create();
-          quat.fromEuler(localQuat, localRotEuler[0], localRotEuler[1], localRotEuler[2]);
-          if (this.transformSpace === 'local' || forceLocal) {
-            quat.multiply(actor.rootComponent.relativeRotation, rot, localQuat);
-          } else {
-            quat.copy(actor.rootComponent.relativeRotation, localQuat);
-          }
-        } else {
-          if (this.transformSpace === 'local' || forceLocal) {
-            quat.copy(actor.rootComponent.relativeRotation, rot);
-          } else {
-            quat.identity(actor.rootComponent.relativeRotation);
-          }
-        }
-
-        const finalScale = scaleFactor * scaleMultiplier;
-        vec3.set(actor.rootComponent.relativeScale, finalScale, finalScale, finalScale);
-      };
-
-      // Point along local -Z (Forward) - Force Local regardless of transformSpace
-      syncPart(this.lightDirectionGizmo, vec3.fromValues(0, 0, 0), vec3.fromValues(-90, 0, 0), 1.0, true);
-      syncPart(this.lightDirectionTip, vec3.fromValues(0, 0, -3.0), vec3.fromValues(-90, 0, 0), 1.0, true);
-    } else {
-      if (this.gizmoActor) {
-        this.gizmoActor.bIsHidden = false;
-        vec3.copy(this.gizmoActor.rootComponent!.relativeLocation, pos);
-        quat.copy(this.gizmoActor.rootComponent!.relativeRotation, this.transformSpace === 'local' ? rot : quat.create());
-        this.gizmoActor.updateGizmoScale(camPos, camRot);
-      }
-
-      const hidePos = vec3.fromValues(99999, 99999, 99999);
-      if (this.lightDirectionGizmo?.rootComponent) vec3.copy(this.lightDirectionGizmo.rootComponent.relativeLocation, hidePos);
-      if (this.lightDirectionTip?.rootComponent) vec3.copy(this.lightDirectionTip.rootComponent.relativeLocation, hidePos);
+    if (this.gizmoActor) {
+      this.gizmoActor.bIsHidden = false;
+      vec3.copy(this.gizmoActor.rootComponent!.relativeLocation, pos);
+      quat.copy(this.gizmoActor.rootComponent!.relativeRotation, this.transformSpace === 'local' ? rot : quat.create());
+      this.gizmoActor.updateGizmoScale(camPos, camRot);
     }
   }
 
-  private calculateScaleFactor(pos: vec3): number {
-    const activeWorld = Engine.getInstance().getActiveWorld();
-    if (!activeWorld) return 1.0;
-    let camPos = vec3.fromValues(0, 10, 20);
-    for (const actor of activeWorld.actors) {
-      if (actor.rootComponent && (actor.name === 'MainCamera' || actor.rootComponent.constructor.name === 'UCameraComponent')) {
-        camPos = actor.rootComponent.relativeLocation;
-        break;
-      }
-    }
-    return vec3.distance(camPos, pos) * 0.15;
-  }
 
   private rebuildGizmos(): void {
     const activeWorld = Engine.getInstance().getActiveWorld();
@@ -463,49 +371,16 @@ export class GizmoManager {
       activeWorld.destroyActor(this.gizmoActor);
       this.gizmoActor = null;
     }
-    if (this.lightDirectionGizmo) activeWorld.destroyActor(this.lightDirectionGizmo);
-    if (this.lightDirectionTip) activeWorld.destroyActor(this.lightDirectionTip);
-
-    if (!this._selectedActor) return;
-
-    const engine = Engine.getInstance();
-    const device = engine.getRenderer().getDevice();
-    if (!device) return;
-
     // Spawn the professional AGizmoActor for standard transformations
     this.gizmoActor = activeWorld.spawnActor(AGizmoActor, 'EditorGizmo', true);
     this.gizmoActor.setGizmoType(this.currentTransformMode);
     this.gizmoActor.bIsHidden = true; // Hidden until update finds a selection
-
-    const isSun = this._selectedActor.getComponent(UDirectionalLightComponent);
-    if (isSun) {
-      this.lightDirectionGizmo = activeWorld.spawnActor(AActor, 'LightDirectionGizmo', true);
-      const mesh = this.lightDirectionGizmo.addComponent(UMeshComponent);
-      this.lightDirectionGizmo.rootComponent = mesh;
-      const lightCol = [1.0, 0.9, 0.2];
-      mesh.setPrimitive('Primitive_Cylinder');
-      mesh.isGizmo = true;
-      mesh.pickingId = 3; // Z-axis equivalent for solar handle
-      mesh.relativeLocation = vec3.fromValues(99999, 99999, 99999);
-
-      this.lightDirectionTip = activeWorld.spawnActor(AActor, 'LightDirectionHandle', true);
-      const tipMesh = this.lightDirectionTip.addComponent(UMeshComponent);
-      this.lightDirectionTip.rootComponent = tipMesh;
-      tipMesh.setPrimitive('Primitive_Sphere');
-      tipMesh.isGizmo = true;
-      tipMesh.pickingId = 3;
-      if (tipMesh.material) tipMesh.material.baseColor = new Float32Array([...lightCol, 1.0]);
-      vec3.set(tipMesh.relativeScale, 0.025, 0.025, 0.025);
-    }
 
     this.update();
   }
 
   private hideGizmos(): void {
     if (this.gizmoActor) this.gizmoActor.bIsHidden = true;
-    const hidePos = vec3.fromValues(99999, 99999, 99999);
-    if (this.lightDirectionGizmo?.rootComponent) vec3.copy(this.lightDirectionGizmo.rootComponent.relativeLocation, hidePos);
-    if (this.lightDirectionTip?.rootComponent) vec3.copy(this.lightDirectionTip.rootComponent.relativeLocation, hidePos);
   }
 
   private getCameraPosition(): vec3 {
