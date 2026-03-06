@@ -3,6 +3,7 @@ import { Logger } from '../Core/Logger';
 import { World } from '../Framework/World';
 import { UCameraComponent } from '../Components/UCameraComponent';
 import { UMeshComponent } from '../Components/UMeshComponent';
+import { USceneComponent } from '../Framework/USceneComponent';
 import { UDirectionalLightComponent } from '../Components/UDirectionalLightComponent';
 import { USkyLightComponent } from '../Components/USkyLightComponent';
 import { UAssetManager } from '../Core/Resources/UAssetManager';
@@ -554,6 +555,7 @@ export class Renderer {
     for (const actor of world.actors) {
       if (actor.bIsHidden) continue; // Skip hidden actors
       for (const component of actor.components) {
+        if (component instanceof USceneComponent && component.bIsHidden) continue;
         if (component instanceof UMeshComponent && component.vertexBuffer && component.topology === 'triangle-list' && !component.isGizmo) {
           const lMVP = mat4.create();
           mat4.multiply(lMVP, lightViewProj, component.getWorldMatrix());
@@ -610,6 +612,7 @@ export class Renderer {
       if (actor.bIsHidden || actor.hasTag('Gizmo')) continue;
       const isSelected = actor.isSelected;
       for (const component of actor.components) {
+        if (component instanceof USceneComponent && component.bIsHidden) continue;
         if (component instanceof UMeshComponent && component.vertexBuffer) {
           if (component.topology === 'triangle-list' && !component.isGizmo) {
             this.renderMesh(pass, component, viewProjMatrix, isSelected);
@@ -659,8 +662,13 @@ export class Renderer {
           if (axisId === 1) axisColor = new Float32Array([1.0, 0.2, 0.2, 1.0]); // Red
           else if (axisId === 2) axisColor = new Float32Array([0.2, 1.0, 0.2, 1.0]); // Green
           else if (axisId === 3) axisColor = new Float32Array([0.2, 0.2, 1.0, 1.0]); // Blue
+          else if (axisId === 4) axisColor = new Float32Array([0.2, 0.5, 1.0, 0.8]); // XY Plane (Blue-ish)
+          else if (axisId === 5) axisColor = new Float32Array([1.0, 0.2, 0.5, 0.8]); // YZ Plane (Red-ish)
+          else if (axisId === 6) axisColor = new Float32Array([0.5, 1.0, 0.2, 0.8]); // ZX Plane (Green-ish)
+          else if (axisId === 7) axisColor = new Float32Array([0.9, 0.9, 0.9, 1.0]); // Uniform (White-ish)
 
           let alpha = 1.0;
+          if (component instanceof USceneComponent && component.bIsHidden) continue;
           let brightness = 1.0;
 
           if (activeAxis !== 0) {

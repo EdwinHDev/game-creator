@@ -101,6 +101,10 @@ export class GizmoManager {
     if (gizmoId === 1) bestAxis = 'X';
     else if (gizmoId === 2) bestAxis = 'Y';
     else if (gizmoId === 3) bestAxis = 'Z';
+    else if (gizmoId === 4) bestAxis = 'X'; // XY (X primary)
+    else if (gizmoId === 5) bestAxis = 'Y'; // YZ (Y primary)
+    else if (gizmoId === 6) bestAxis = 'Z'; // ZX (Z primary)
+    else if (gizmoId === 7) bestAxis = 'X'; // Uniform (X primary)
 
     if (bestAxis) {
       this.isDraggingGizmo = true;
@@ -239,15 +243,32 @@ export class GizmoManager {
               vec3.scaleAndAdd(pos, pos, moveAxis, worldDelta);
             } else if (this.currentTransformMode === 'scale') {
               const sc = root.relativeScale;
-              const axisIdx = this.dragAxis === 'X' ? 0 : this.dragAxis === 'Y' ? 1 : 2;
-
-              // Professional Exponential Scaling: 
-              // Moving mouse right/up increases scale, left/down decreases.
-              // We use the pixel displacement projected on the screen axis.
-              const sensitivity = 0.005; // Adjust this for "feel"
+              const sensitivity = 0.005;
               const scaleFactor = Math.pow(2.0, pixelDelta * sensitivity);
 
-              sc[axisIdx] = Math.max(0.01, sc[axisIdx] * scaleFactor);
+              const activeId = this.gizmoActor?.activeAxis;
+              if (activeId === 7) {
+                // Uniform Scale (XYZ)
+                sc[0] = Math.max(0.01, sc[0] * scaleFactor);
+                sc[1] = Math.max(0.01, sc[1] * scaleFactor);
+                sc[2] = Math.max(0.01, sc[2] * scaleFactor);
+              } else if (activeId === 4) {
+                // Plane XY
+                sc[0] = Math.max(0.01, sc[0] * scaleFactor);
+                sc[1] = Math.max(0.01, sc[1] * scaleFactor);
+              } else if (activeId === 5) {
+                // Plane YZ
+                sc[1] = Math.max(0.01, sc[1] * scaleFactor);
+                sc[2] = Math.max(0.01, sc[2] * scaleFactor);
+              } else if (activeId === 6) {
+                // Plane ZX
+                sc[0] = Math.max(0.01, sc[0] * scaleFactor);
+                sc[2] = Math.max(0.01, sc[2] * scaleFactor);
+              } else {
+                // Single Axis
+                const axisIdx = this.dragAxis === 'X' ? 0 : this.dragAxis === 'Y' ? 1 : 2;
+                sc[axisIdx] = Math.max(0.01, sc[axisIdx] * scaleFactor);
+              }
             }
           }
         }

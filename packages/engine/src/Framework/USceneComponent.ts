@@ -21,6 +21,11 @@ export class USceneComponent extends UActorComponent {
    */
   public relativeScale: vec3;
 
+  /**
+   * Visibility flag. If true, this component and its children (if using this flag) won't be rendered.
+   */
+  public bIsHidden: boolean = false;
+
   public parent: USceneComponent | null = null;
   public children: USceneComponent[] = [];
 

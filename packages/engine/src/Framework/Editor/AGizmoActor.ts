@@ -12,6 +12,12 @@ export class AGizmoActor extends AActor {
   private zAxisStem: UMeshComponent;
   private zAxisTip: UMeshComponent;
 
+  // New AAA handles
+  private uniformHandle: UMeshComponent;
+  private xyHandle: UMeshComponent;
+  private yzHandle: UMeshComponent;
+  private zxHandle: UMeshComponent;
+
   public hoverAxis: number = 0;
   public activeAxis: number = 0;
 
@@ -19,7 +25,7 @@ export class AGizmoActor extends AActor {
     super('TranslationGizmo');
     this.tags.push('EditorUtility', 'Gizmo');
 
-    const stemScale = vec3.fromValues(0.01, 1.0, 0.01);
+    const stemScale = vec3.fromValues(0.015, 1.0, 0.015);
     const tipScale = vec3.fromValues(0.08, 0.2, 0.08);
 
     // --- Axis X (Red) ---
@@ -85,6 +91,47 @@ export class AGizmoActor extends AActor {
     this.yAxisTip.setupAttachment(dummyRoot);
     this.zAxisStem.setupAttachment(dummyRoot);
     this.zAxisTip.setupAttachment(dummyRoot);
+
+    // --- Uniform Scale Handle (Center) ---
+    this.uniformHandle = this.addComponent(UMeshComponent, 'UniformScale');
+    this.uniformHandle.setAsset(UAssetManager.getAsset(EPrimitiveType.BOX));
+    this.uniformHandle.isGizmo = true;
+    this.uniformHandle.pickingId = 7;
+    this.uniformHandle.relativeScale = vec3.fromValues(0.05, 0.05, 0.05);
+    this.uniformHandle.setupAttachment(dummyRoot);
+    this.uniformHandle.bIsHidden = true; // Mode-specific
+
+    // --- Planar Scale Handles ---
+    const planeScale = vec3.fromValues(0.08, 0.08, 0.001);
+
+    this.xyHandle = this.addComponent(UMeshComponent, 'XY_Scale');
+    this.xyHandle.setAsset(UAssetManager.getAsset(EPrimitiveType.BOX));
+    this.xyHandle.isGizmo = true;
+    this.xyHandle.pickingId = 4;
+    this.xyHandle.relativeScale = planeScale;
+    this.xyHandle.relativeLocation = vec3.fromValues(40, 40, 0); // Positioned between X and Y
+    this.xyHandle.setupAttachment(dummyRoot);
+    this.xyHandle.bIsHidden = true;
+
+    this.yzHandle = this.addComponent(UMeshComponent, 'YZ_Scale');
+    this.yzHandle.setAsset(UAssetManager.getAsset(EPrimitiveType.BOX));
+    this.yzHandle.isGizmo = true;
+    this.yzHandle.pickingId = 5;
+    this.yzHandle.relativeScale = planeScale;
+    this.yzHandle.relativeLocation = vec3.fromValues(0, 40, 40);
+    this.yzHandle.relativeRotation = quat.fromEuler(quat.create(), 0, 90, 0);
+    this.yzHandle.setupAttachment(dummyRoot);
+    this.yzHandle.bIsHidden = true;
+
+    this.zxHandle = this.addComponent(UMeshComponent, 'ZX_Scale');
+    this.zxHandle.setAsset(UAssetManager.getAsset(EPrimitiveType.BOX));
+    this.zxHandle.isGizmo = true;
+    this.zxHandle.pickingId = 6;
+    this.zxHandle.relativeScale = planeScale;
+    this.zxHandle.relativeLocation = vec3.fromValues(40, 0, 40);
+    this.zxHandle.relativeRotation = quat.fromEuler(quat.create(), 90, 0, 0);
+    this.zxHandle.setupAttachment(dummyRoot);
+    this.zxHandle.bIsHidden = true;
   }
 
   public updateGizmoScale(cameraPosition: vec3, cameraFOV: number = 45) {
@@ -111,9 +158,13 @@ export class AGizmoActor extends AActor {
     this.yAxisTip.setAsset(tipAsset);
     this.zAxisTip.setAsset(tipAsset);
 
-    // Adjust tip scale and position for cubes vs cones
-    // Primitives radius is ~50. 
-    // For Scale cubes, we want them to look centered and slightly smaller/stockier
+    // AAA proportions: refined stem thickness
+    const stemScale = vec3.fromValues(0.015, 1.0, 0.015);
+    this.xAxisStem.relativeScale = stemScale;
+    this.yAxisStem.relativeScale = stemScale;
+    this.zAxisStem.relativeScale = stemScale;
+
+    // Adjust tip scale and position
     const tipScale = isScale ? vec3.fromValues(0.06, 0.06, 0.06) : vec3.fromValues(0.08, 0.2, 0.08);
     const tipOffset = isScale ? 100 : 105;
 
@@ -126,7 +177,18 @@ export class AGizmoActor extends AActor {
     this.zAxisTip.relativeScale = tipScale;
     this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, tipOffset);
 
-    // Cubes don't need rotation to point, but for simplicity we keep the axial rotation
-    // that aligns their faces with the stems.
+    // Show/Hide advanced scale handles
+    this.uniformHandle.bIsHidden = !isScale;
+    this.xyHandle.bIsHidden = !isScale;
+    this.yzHandle.bIsHidden = !isScale;
+    this.zxHandle.bIsHidden = !isScale;
+
+    // Apply colors to planar handles
+    if (isScale) {
+      if (this.xyHandle.material) this.xyHandle.material.baseColor = new Float32Array([0.2, 0.5, 1.0, 0.6]); // Blue-ish
+      if (this.yzHandle.material) this.yzHandle.material.baseColor = new Float32Array([1.0, 0.2, 0.5, 0.6]); // Red-ish
+      if (this.zxHandle.material) this.zxHandle.material.baseColor = new Float32Array([0.5, 1.0, 0.2, 0.6]); // Green-ish
+      if (this.uniformHandle.material) this.uniformHandle.material.baseColor = new Float32Array([0.9, 0.9, 0.9, 0.8]); // White
+    }
   }
 }
