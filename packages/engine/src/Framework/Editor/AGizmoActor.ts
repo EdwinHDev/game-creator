@@ -101,4 +101,32 @@ export class AGizmoActor extends AActor {
     this.rootComponent.relativeScale = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
     this.rootComponent.updateWorldMatrix();
   }
+
+  public setGizmoType(mode: 'translate' | 'scale' | 'rotate') {
+    const isScale = mode === 'scale';
+    const tipAsset = UAssetManager.getAsset(isScale ? EPrimitiveType.BOX : EPrimitiveType.CONE);
+
+    // Scale mode uses cubes, translation uses cones
+    this.xAxisTip.setAsset(tipAsset);
+    this.yAxisTip.setAsset(tipAsset);
+    this.zAxisTip.setAsset(tipAsset);
+
+    // Adjust tip scale and position for cubes vs cones
+    // Primitives radius is ~50. 
+    // For Scale cubes, we want them to look centered and slightly smaller/stockier
+    const tipScale = isScale ? vec3.fromValues(0.06, 0.06, 0.06) : vec3.fromValues(0.08, 0.2, 0.08);
+    const tipOffset = isScale ? 100 : 105;
+
+    this.xAxisTip.relativeScale = tipScale;
+    this.xAxisTip.relativeLocation = vec3.fromValues(tipOffset, 0, 0);
+
+    this.yAxisTip.relativeScale = tipScale;
+    this.yAxisTip.relativeLocation = vec3.fromValues(0, tipOffset, 0);
+
+    this.zAxisTip.relativeScale = tipScale;
+    this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, tipOffset);
+
+    // Cubes don't need rotation to point, but for simplicity we keep the axial rotation
+    // that aligns their faces with the stems.
+  }
 }

@@ -237,10 +237,17 @@ export class GizmoManager {
 
             if (this.currentTransformMode === 'translate') {
               vec3.scaleAndAdd(pos, pos, moveAxis, worldDelta);
-            } else {
+            } else if (this.currentTransformMode === 'scale') {
               const sc = root.relativeScale;
               const axisIdx = this.dragAxis === 'X' ? 0 : this.dragAxis === 'Y' ? 1 : 2;
-              sc[axisIdx] = Math.max(0.01, sc[axisIdx] + worldDelta);
+
+              // Professional Exponential Scaling: 
+              // Moving mouse right/up increases scale, left/down decreases.
+              // We use the pixel displacement projected on the screen axis.
+              const sensitivity = 0.005; // Adjust this for "feel"
+              const scaleFactor = Math.pow(2.0, pixelDelta * sensitivity);
+
+              sc[axisIdx] = Math.max(0.01, sc[axisIdx] * scaleFactor);
             }
           }
         }
@@ -402,6 +409,7 @@ export class GizmoManager {
 
     // Spawn the professional AGizmoActor for standard transformations
     this.gizmoActor = activeWorld.spawnActor(AGizmoActor, 'EditorGizmo', true);
+    this.gizmoActor.setGizmoType(this.currentTransformMode);
     this.gizmoActor.bIsHidden = true; // Hidden until update finds a selection
 
     const isSun = this._selectedActor.getComponent(UDirectionalLightComponent);
