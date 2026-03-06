@@ -241,6 +241,6 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     // Restaurar el flujo PBR estándar pero asegurando que el Albedo sea el protagonista
     let finalColor = directLighting + ambientDiffuse + ambientReflection;
 
-    // Aplica el gamma normal
-    return vec4<f32>(pow(clamp(finalColor, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2)), uniforms.baseColor.a * rawTexColor.a);
+    // Aplica el gamma normal y fuerza la opacidad a 1.0 para depurar solidez
+    return vec4<f32>(pow(clamp(finalColor, vec3<f32>(0.0), vec3<f32>(1.0)), vec3<f32>(1.0/2.2)), 1.0);
 }

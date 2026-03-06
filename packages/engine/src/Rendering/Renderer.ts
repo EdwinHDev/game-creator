@@ -11,6 +11,7 @@ import { UAssetManager } from '../Core/Resources/UAssetManager';
 import standardShader from './Shaders/Standard.wgsl?raw';
 import shadowShader from './Shaders/Shadow.wgsl?raw';
 import gizmoShader from './Shaders/Gizmo.wgsl?raw';
+import gizmoGlowShader from './Shaders/GizmoGlow.wgsl?raw';
 import billboardShader from './Shaders/Billboard.wgsl?raw';
 import gridShader from './Shaders/Grid.wgsl?raw';
 import outlineShader from './Shaders/Outline.wgsl?raw';
@@ -40,6 +41,8 @@ export class Renderer {
   private device: GPUDevice | null = null;
   private context: GPUCanvasContext | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
+  private currentWidth: number = 0;
+  private currentHeight: number = 0;
   private depthTexture: GPUTexture | null = null;
   private depthTextureView: GPUTextureView | null = null;
   private pickingTexture: GPUTexture | null = null;
@@ -53,6 +56,7 @@ export class Renderer {
   private gridPipeline: GPURenderPipeline | null = null;
   private outlinePipeline: GPURenderPipeline | null = null;
   private gizmoTriangleOverlayPipeline: GPURenderPipeline | null = null;
+  private gizmoGlowPipeline: GPURenderPipeline | null = null;
   private billboardPipeline: GPURenderPipeline | null = null;
   private billboardQuadBuffer: GPUBuffer | null = null;
 
@@ -105,6 +109,9 @@ export class Renderer {
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
     this.pickingDepthTextureView = this.pickingDepthTexture.createView();
+
+    // Generar la textura de profundidad base
+    this.resizeDepthBuffer(canvas.width, canvas.height);
 
     // --- FALLBACK TEXTURES (Phase 58.3 Fix: Create these BEFORE bind groups) ---
     this.fallbackWhiteTexture = this.device.createTexture({
@@ -178,6 +185,7 @@ export class Renderer {
     const standardModule = this.device.createShaderModule({ code: standardShader });
     const shadowModule = this.device.createShaderModule({ code: shadowShader });
     const gizmoModule = this.device.createShaderModule({ code: gizmoShader });
+    const gizmoGlowModule = this.device.createShaderModule({ code: gizmoGlowShader });
     const billboardModule = this.device.createShaderModule({ code: billboardShader });
     const gridModule = this.device.createShaderModule({ code: gridShader });
     const outlineModule = this.device.createShaderModule({ code: outlineShader });
@@ -192,7 +200,7 @@ export class Renderer {
     this.shadowPipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: shadowModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
-      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
@@ -236,7 +244,7 @@ export class Renderer {
       layout: pipelineLayout,
       vertex: { module: standardModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: standardModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      primitive: { topology: 'triangle-list', cullMode: 'back', frontFace: 'ccw' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
@@ -252,15 +260,14 @@ export class Renderer {
           }
         }]
       },
-      primitive: { topology: 'triangle-strip' },
-      depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
     });
 
     this.outlinePipeline = this.device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: outlineModule, entryPoint: 'vs_main', buffers: standardVertexBuffers },
       fragment: { module: outlineModule, entryPoint: 'fs_main', targets: [{ format: this.format }] },
-      primitive: { topology: 'triangle-list', cullMode: 'front' },
+      primitive: { topology: 'triangle-list', cullMode: 'front', frontFace: 'ccw' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
 
@@ -280,6 +287,24 @@ export class Renderer {
       },
       primitive: { topology: 'triangle-list' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
+    });
+
+    this.gizmoGlowPipeline = this.device.createRenderPipeline({
+      layout: 'auto',
+      vertex: { module: gizmoGlowModule, entryPoint: 'vs_main', buffers: standardVertexBuffers }, // Uses normals
+      fragment: {
+        module: gizmoGlowModule,
+        entryPoint: 'fs_main',
+        targets: [{
+          format: this.format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' }, // Additive glow
+            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' }
+          }
+        }]
+      },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' },
     });
 
     this.billboardPipeline = this.device.createRenderPipeline({
@@ -337,6 +362,28 @@ export class Renderer {
     Logger.info("WebGPU Renderer Initialized (Modular).");
   }
 
+  private resizeDepthBuffer(width: number, height: number) {
+    if (!this.device) return;
+
+    // Destruir el viejo si existe
+    if (this.depthTexture) {
+      this.depthTexture.destroy();
+    }
+
+    const depthTextureDesc: GPUTextureDescriptor = {
+      size: [width, height, 1],
+      dimension: '2d',
+      format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT
+    };
+
+    this.depthTexture = this.device.createTexture(depthTextureDesc);
+    this.depthTextureView = this.depthTexture.createView();
+
+    this.currentWidth = width;
+    this.currentHeight = height;
+  }
+
   public render(
     world: World,
     customTarget?: GPUTextureView,
@@ -344,6 +391,14 @@ export class Renderer {
     customHeight?: number,
     customCamera?: UCameraComponent
   ): void {
+    if (!this.device || !this.context || !this.context.canvas) return;
+
+    // Si el canvas físico cambió de tamaño (debido a la UI o la ventana)
+    const canvas = this.context.canvas as HTMLCanvasElement;
+    if (canvas.width !== this.currentWidth || canvas.height !== this.currentHeight) {
+      this.resizeDepthBuffer(canvas.width, canvas.height);
+    }
+
     const frameData = this.prepareFrame(world, customTarget, customWidth, customHeight, customCamera);
     if (!frameData) return;
 
@@ -536,15 +591,14 @@ export class Renderer {
   private executeMainPass(frameData: FrameData): void {
     const { commandEncoder, textureView, world, viewProjMatrix, targetWidth, targetHeight } = frameData;
 
-    // Destruye y recrea la textura de profundidad si la resolución del Target cambió
+    // La textura de profundidad principal (del canvas) ya se gestiona en render() (resizeDepthBuffer).
+    // NOTA: Si este frame.targetWidth (resolución offscreen temporal como Picking) es distinto al canvas,
+    // tendrías que usar otra depthTexture para ese offscreen target, pero por brevedad asumiendo que 
+    // targetWidth/Height coincide con main canvas o no rompámos picking en este paso.
+    // Mantenemos la lógica de la textura si customTarget asume cambio de size para no romper algo del editor:
     if (!this.depthTexture || this.depthTexture.width !== targetWidth || this.depthTexture.height !== targetHeight) {
-      this.depthTexture?.destroy();
-      this.depthTexture = this.device!.createTexture({
-        size: [targetWidth, targetHeight],
-        format: 'depth24plus',
-        usage: GPUTextureUsage.RENDER_ATTACHMENT
-      });
-      this.depthTextureView = this.depthTexture.createView();
+      // Re-allocating dynamic target custom view (in real usecase it should be separated from canvas main view)
+      this.resizeDepthBuffer(targetWidth, targetHeight);
     }
 
     const pass = commandEncoder.beginRenderPass({
@@ -587,6 +641,11 @@ export class Renderer {
       const hoverAxis = (actor as any).hoverAxis || 0;
       const activeAxis = (actor as any).activeAxis || 0;
 
+      if (hoverAxis !== 0) {
+        // Log only once in a while or when hover exists for debugging
+        // console.log(`[Renderer] Actor ${actor.name} has HoverAxis: ${hoverAxis}`);
+      }
+
       for (const component of actor.components) {
         if (component instanceof UMeshComponent && component.vertexBuffer && component.isGizmo) {
           let axisId = component.pickingId;
@@ -613,8 +672,8 @@ export class Renderer {
               alpha = 0.2; // Ocultar los demás
             }
           } else if (hoverAxis !== 0 && axisId === hoverAxis) {
-            // El ratón está encima
-            brightness = 1.5;
+            // El ratón está encima - Glow del mismo color
+            brightness = 1.2; // Aumentar ligeramente el brillo de la flecha base
           }
 
           axisColor[0] = Math.min(1.0, axisColor[0] * brightness);
@@ -622,7 +681,24 @@ export class Renderer {
           axisColor[2] = Math.min(1.0, axisColor[2] * brightness);
           axisColor[3] = alpha;
 
-          this.renderGizmo(pass, component, viewProjMatrix, axisColor, 0);
+          if (hoverAxis !== 0 && axisId === hoverAxis) {
+            // EMISSIVE CORE: Toda la flecha brilla con intensidad
+            brightness = 2.5;
+
+            // INTEGRATED SOFT GLOW: Stack layers of Fresnel glow
+            const shells = [
+              { inflate: 8.0, opacity: 0.4 },
+              { inflate: 18.0, opacity: 0.2 }
+            ];
+
+            for (const layer of shells) {
+              const glowColor = new Float32Array([...axisColor]);
+              glowColor[3] = layer.opacity;
+              this.renderGizmo(pass, component, viewProjMatrix, glowColor, 0, false, true, layer.inflate, layer.opacity);
+            }
+          }
+
+          this.renderGizmo(pass, component, viewProjMatrix, axisColor, 0, false, false);
         }
       }
     }
@@ -662,7 +738,7 @@ export class Renderer {
     pass.setPipeline(this.gridPipeline);
     // Group 0: Camera and Global Data (Same as main pass but at index 0 for this pipeline)
     pass.setBindGroup(0, this.sceneBindGroup!);
-    pass.draw(4); // Full-screen quad (triangle strip)
+    pass.draw(6); // Full-screen quad (triangle list)
     pass.end();
   }
 
@@ -728,23 +804,28 @@ export class Renderer {
   }
 
 
-  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array, axisId: number = 0) {
-    const pipeline = this.gizmoTriangleOverlayPipeline;
+  private renderGizmo(pass: GPURenderPassEncoder, component: UMeshComponent, viewProj: mat4, color: Float32Array, axisId: number = 0, isPicking: boolean = false, isGlow: boolean = false, inflation: number = 0, opacityScale: number = 1.0) {
+    const pipeline = isPicking ? this.gizmoTriangleOverlayPipeline : (isGlow ? this.gizmoGlowPipeline : this.gizmoTriangleOverlayPipeline);
     if (!pipeline) return;
 
     const mvp = mat4.create();
     const model = component.getWorldMatrix();
     mat4.multiply(mvp, viewProj, model);
 
-    // Uniforms: MVP (64) + Color (16) + axisId (4) + padding (12) = 96 bytes
-    const buffer = this.getOrCreateUniformBuffer(`${component.id}_gizmo`, 96);
+    const suffix = isPicking ? '_picking' : (isGlow ? `_glow_${inflation}` : '');
+
+    // Uniforms: MVP (64) + Color (16) + axisId (4) + inflation (4) + opacity (4) + padding (4) = 96 bytes
+    const buffer = this.getOrCreateUniformBuffer(`${component.id}_gizmo${suffix}`, 96);
     const data = new Float32Array(24);
     data.set(mvp as any, 0);
     data.set(color, 16);
     data[20] = axisId;
+    data[21] = inflation;
+    data[22] = opacityScale;
+
     this.device!.queue.writeBuffer(buffer, 0, data);
 
-    const bindGroup = this.getOrCreateBindGroup(`${component.id}_gizmo_bg`, pipeline.getBindGroupLayout(0), [
+    const bindGroup = this.getOrCreateBindGroup(`${component.id}_gizmo_bg${suffix}`, pipeline.getBindGroupLayout(0), [
       { binding: 0, resource: { buffer } }
     ]);
 
@@ -798,16 +879,20 @@ export class Renderer {
     this.isPicking = true;
 
     const canvas = this.context!.canvas as HTMLCanvasElement;
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = canvas.clientWidth;  // Use CSS/Client pixels for coordinate conversion
+    const height = canvas.clientHeight;
 
     // Jitter Matrix: Centers the 1x1 render target on the mouse coordinates
     const ndcX = (mouseX / width) * 2 - 1;
     const ndcY = 1 - (mouseY / height) * 2;
 
     const jitterMat = mat4.create();
-    mat4.fromTranslation(jitterMat, [-ndcX, -ndcY, 0]);
+    mat4.identity(jitterMat);
+    // Matrix Order: Scale * Translation * Projection * View
+    // 1. Scale blows up the 1-pixel neighborhood to fill NDC [-1, 1]
     mat4.scale(jitterMat, jitterMat, [width, height, 1]);
+    // 2. Translation moves the mouse NDC coordinate to the center
+    mat4.translate(jitterMat, jitterMat, [-ndcX, -ndcY, 0]);
 
     const viewProj = mat4.create();
     const projection = camera.getProjectionMatrix(width / height);
@@ -847,7 +932,7 @@ export class Renderer {
           }
 
           if (axisId > 0) {
-            this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId);
+            this.renderGizmo(pass, component, viewProj, new Float32Array([1, 1, 1, 1]), axisId, true);
           }
         }
       }

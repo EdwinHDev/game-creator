@@ -292,7 +292,10 @@ export class GizmoManager {
     if (activeWorld && mainCamera) {
       const gizmoId = await engine.getRenderer().getGizmoIdAt(this.lastMouseX, this.lastMouseY, activeWorld, mainCamera);
       if (this.gizmoActor) {
-        this.gizmoActor.hoverAxis = gizmoId;
+        if (this.gizmoActor.hoverAxis !== gizmoId) {
+          this.gizmoActor.hoverAxis = gizmoId;
+          this.update(); // Trigger re-render with new hover state
+        }
       }
     }
     this.isCheckingHover = false;

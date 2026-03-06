@@ -154,7 +154,7 @@ export class UAssetManager {
       vertices.push(x * radius, -height / 2, z * radius, 0, -1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
-      indices.push(bottomCenterIndex, bottomRingStart + i + 1, bottomRingStart + i);
+      indices.push(bottomCenterIndex, bottomRingStart + i, bottomRingStart + i + 1);
     }
 
     // 3. Top Cap
@@ -168,7 +168,7 @@ export class UAssetManager {
       vertices.push(x * radius, height / 2, z * radius, 0, 1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
-      indices.push(topCenterIndex, topRingStart + i, topRingStart + i + 1);
+      indices.push(topCenterIndex, topRingStart + i + 1, topRingStart + i);
     }
 
     this.assets.set(EPrimitiveType.CYLINDER, new UAsset(EPrimitiveType.CYLINDER, device, new Float32Array(vertices), new Uint32Array(indices)));
@@ -216,7 +216,7 @@ export class UAssetManager {
       vertices.push(x * radius, -height / 2, z * radius, 0, -1, 0, (x + 1) * 0.5, (z + 1) * 0.5, 1, 0, 0, 1);
     }
     for (let i = 0; i < segments; i++) {
-      indices.push(centerIndex, ringStart + i + 1, ringStart + i);
+      indices.push(centerIndex, ringStart + i, ringStart + i + 1);
     }
 
     this.assets.set(EPrimitiveType.CONE, new UAsset(EPrimitiveType.CONE, device, new Float32Array(vertices), new Uint32Array(indices)));
@@ -231,17 +231,15 @@ export class UAssetManager {
     const indices: number[] = [];
 
     // Generate UV Sphere-like vertices but offset by height
-    const latEnd = rings * 2;
+    const latEnd = rings * 2 + 1;
 
     for (let lat = 0; lat <= latEnd; lat++) {
-      const theta = lat * Math.PI / latEnd;
+      const effectiveLat = lat <= rings ? lat : lat - 1;
+      const theta = effectiveLat * Math.PI / (rings * 2);
       const sinTheta = Math.sin(theta);
       const cosTheta = Math.cos(theta);
 
-      // Offset Y based on which hemisphere we are in
-      let yOffset = 0;
-      if (lat < rings) yOffset = cylinderHeight / 2;
-      else if (lat > rings) yOffset = -cylinderHeight / 2;
+      const yOffset = lat <= rings ? cylinderHeight / 2 : -cylinderHeight / 2;
 
       for (let lon = 0; lon <= segments; lon++) {
         const phi = lon * 2 * Math.PI / segments;
@@ -312,12 +310,12 @@ export class UAssetManager {
     ]);
 
     const indices = new Uint32Array([
-      0, 2, 1, 0, 3, 2,     // Front
-      4, 6, 5, 4, 7, 6,     // Back
-      8, 10, 9, 8, 11, 10,  // Top
-      12, 14, 13, 12, 15, 14, // Bottom
-      16, 18, 17, 16, 19, 18, // Right
-      20, 22, 21, 20, 23, 22, // Left
+      0, 1, 2, 0, 2, 3, // Front
+      4, 5, 6, 4, 6, 7, // Back
+      8, 9, 10, 8, 10, 11, // Top
+      12, 13, 14, 12, 14, 15, // Bottom
+      16, 17, 18, 16, 18, 19, // Right
+      20, 21, 22, 20, 22, 23, // Left
     ]);
 
     this.assets.set(EPrimitiveType.BOX, new UAsset(EPrimitiveType.BOX, device, vertices, indices));
@@ -336,7 +334,7 @@ export class UAssetManager {
       // Point 3 (Top-Left)
       -50.0, 0.0, 50.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0
     ]);
-    const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+    const indices = new Uint32Array([0, 3, 2, 0, 2, 1]);
     this.assets.set(EPrimitiveType.PLANE, new UAsset(EPrimitiveType.PLANE, device, vertices, indices));
   }
 
