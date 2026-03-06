@@ -151,6 +151,7 @@ export class AGizmoActor extends AActor {
 
   public setGizmoType(mode: 'translate' | 'scale' | 'rotate') {
     const isScale = mode === 'scale';
+    const isTranslate = mode === 'translate';
     const tipAsset = UAssetManager.getAsset(isScale ? EPrimitiveType.BOX : EPrimitiveType.CONE);
 
     // Scale mode uses cubes, translation uses cones
@@ -177,14 +178,15 @@ export class AGizmoActor extends AActor {
     this.zAxisTip.relativeScale = tipScale;
     this.zAxisTip.relativeLocation = vec3.fromValues(0, 0, tipOffset);
 
-    // Show/Hide advanced scale handles
-    this.uniformHandle.bIsHidden = !isScale;
-    this.xyHandle.bIsHidden = !isScale;
-    this.yzHandle.bIsHidden = !isScale;
-    this.zxHandle.bIsHidden = !isScale;
+    // Show advanced handles for both Scale and Translate modes (AAA standard)
+    const showAdvanced = isScale || isTranslate;
+    this.uniformHandle.bIsHidden = !showAdvanced;
+    this.xyHandle.bIsHidden = !showAdvanced;
+    this.yzHandle.bIsHidden = !showAdvanced;
+    this.zxHandle.bIsHidden = !showAdvanced;
 
     // Apply colors to planar handles
-    if (isScale) {
+    if (showAdvanced) {
       if (this.xyHandle.material) this.xyHandle.material.baseColor = new Float32Array([0.2, 0.5, 1.0, 0.6]); // Blue-ish
       if (this.yzHandle.material) this.yzHandle.material.baseColor = new Float32Array([1.0, 0.2, 0.5, 0.6]); // Red-ish
       if (this.zxHandle.material) this.zxHandle.material.baseColor = new Float32Array([0.5, 1.0, 0.2, 0.6]); // Green-ish

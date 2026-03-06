@@ -239,8 +239,42 @@ export class GizmoManager {
             const pixelDelta = deltaX * screenAxisX + deltaY * screenAxisY;
             const worldDelta = pixelDelta / pixelsPerUnit;
 
+            const activeId = this.gizmoActor?.activeAxis ?? 0;
+
             if (this.currentTransformMode === 'translate') {
-              vec3.scaleAndAdd(pos, pos, moveAxis, worldDelta);
+              if (activeId >= 4 && activeId <= 6) {
+                // Planar Translation
+                const normal = vec3.create();
+                if (activeId === 4) vec3.set(normal, 0, 0, 1);
+                else if (activeId === 5) vec3.set(normal, 1, 0, 0);
+                else if (activeId === 6) vec3.set(normal, 0, 1, 0);
+
+                if (this.transformSpace === 'local') {
+                  vec3.transformQuat(normal, normal, this.dragStartActorRotation);
+                }
+
+                const hit = intersectRayPlane(ray.origin, ray.direction, this.dragStartActorPos, normal);
+                if (hit) {
+                  const worldDelta = vec3.create();
+                  vec3.subtract(worldDelta, hit, this.dragStartMouseHit);
+                  vec3.add(root.relativeLocation, this.dragStartActorPos, worldDelta);
+                }
+              } else if (activeId === 7) {
+                // Free Translation (Parallel to camera)
+                const camForward = vec3.create();
+                vec3.set(camForward, viewProj[2], viewProj[6], viewProj[10]);
+                vec3.normalize(camForward, camForward);
+
+                const hit = intersectRayPlane(ray.origin, ray.direction, this.dragStartActorPos, camForward);
+                if (hit) {
+                  const worldDelta = vec3.create();
+                  vec3.subtract(worldDelta, hit, this.dragStartMouseHit);
+                  vec3.add(root.relativeLocation, this.dragStartActorPos, worldDelta);
+                }
+              } else {
+                // Axial Translation
+                vec3.scaleAndAdd(pos, pos, moveAxis, worldDelta);
+              }
             } else if (this.currentTransformMode === 'scale') {
               const sc = root.relativeScale;
               const sensitivity = 0.005;
